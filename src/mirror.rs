@@ -199,13 +199,7 @@ async fn fetch_available_remote(
     channel: &str,
 ) -> anyhow::Result<Vec<AvailableLogEntry>> {
     let url = format!("{}/list?channel={}", base_url, channel);
-    let resp: AvailableLogsResp = http
-        .get(url)
-        .header("Accept-Encoding", "br, gzip, deflate")
-        .send()
-        .await?
-        .json()
-        .await?;
+    let resp: AvailableLogsResp = http.get(url).send().await?.json().await?;
     Ok(resp.available_logs.unwrap_or_default())
 }
 
@@ -251,13 +245,7 @@ fn fetch_available_local(
 }
 
 async fn fetch_daily_remote(http: &HttpClient, url: &str) -> anyhow::Result<Vec<RemoteMessage>> {
-    let resp: DailyLogResp = http
-        .get(url)
-        .header("Accept-Encoding", "br, gzip, deflate")
-        .send()
-        .await?
-        .json()
-        .await?;
+    let resp: DailyLogResp = http.get(url).send().await?.json().await?;
     Ok(resp.messages.unwrap_or_default())
 }
 
