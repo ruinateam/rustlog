@@ -108,6 +108,30 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
             }),
         )
         .api_route(
+            "/{channel_id_type}/{channel}/tiers/{year}/{month}/{day}",
+            get_with(handlers::get_channel_tiers_day, |op| {
+                op.description("Get daily chat tiers (top 200) for a channel")
+            }),
+        )
+        .api_route(
+            "/{channel_id_type}/{channel}/tiers/{year}/{month}",
+            get_with(handlers::get_channel_tiers_month, |op| {
+                op.description("Get monthly chat tiers (top 200) for a channel")
+            }),
+        )
+        .api_route(
+            "/{channel_id_type}/{channel}/tiers/{year}",
+            get_with(handlers::get_channel_tiers_year, |op| {
+                op.description("Get yearly chat tiers (top 200) for a channel")
+            }),
+        )
+        .api_route(
+            "/sully/{channel}/{year}",
+            get_with(handlers::get_sully_streams, |op| {
+                op.description("Fetch stream timestamps from SullyGnome for a channel/year")
+            }),
+        )
+        .api_route(
             "/{channel_id_type}/{channel}/random",
             get_with(handlers::random_channel_line, |op| {
                 op.description("Get a random line from the channel's logs")

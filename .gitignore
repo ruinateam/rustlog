@@ -1,4 +1,7 @@
-/target
-/logs*
+target/
 config.json
-/ch-data
+ch-data/
+cache/
+*.log
+.env
+tmp/

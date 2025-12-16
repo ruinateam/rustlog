@@ -64,6 +64,30 @@ pub struct LogsPathChannel {
     pub channel: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct ChannelMonthPath {
+    #[serde(flatten)]
+    pub channel_info: LogsPathChannel,
+    pub year: String,
+    pub month: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ChannelDayPath {
+    #[serde(flatten)]
+    pub channel_info: LogsPathChannel,
+    pub year: String,
+    pub month: String,
+    pub day: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ChannelYearPath {
+    #[serde(flatten)]
+    pub channel_info: LogsPathChannel,
+    pub year: String,
+}
+
 #[derive(Deserialize, Debug, JsonSchema, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 pub struct LogsParams {
@@ -190,4 +214,119 @@ pub struct PreviousName {
     pub user_login: String,
     pub last_timestamp: DateTime<Utc>,
     pub first_timestamp: DateTime<Utc>,
+}
+
+#[derive(Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TierEntry {
+    pub user_id: String,
+    pub user_login: Option<String>,
+    pub messages: u64,
+    pub unique_messages: u64,
+    pub windows_1m: u64,
+    pub windows_5m: u64,
+    pub windows_15m: u64,
+    pub windows_30m: u64,
+    pub windows_60m: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank_1m: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier_1m: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank_5m: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier_5m: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank_15m: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier_15m: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank_30m: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier_30m: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank_60m: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier_60m: Option<String>,
+    pub tier_score: u32,
+}
+
+#[derive(Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TierResponse {
+    pub year: i32,
+    pub month: u32,
+    pub timezone: &'static str,
+    pub total_users: u64,
+    pub total_messages: u64,
+    pub total_unique_messages: u64,
+    pub entries: Vec<TierEntry>,
+}
+
+#[derive(Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TierDayResponse {
+    pub year: i32,
+    pub month: u32,
+    pub day: u32,
+    pub timezone: &'static str,
+    pub total_users: u64,
+    pub total_messages: u64,
+    pub total_unique_messages: u64,
+    pub entries: Vec<TierEntry>,
+}
+
+#[derive(Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TierYearResponse {
+    pub year: i32,
+    pub timezone: &'static str,
+    pub total_users: u64,
+    pub total_messages: u64,
+    pub total_unique_messages: u64,
+    pub entries: Vec<TierEntry>,
+}
+
+// SullyGnome stream listing
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SullyStreamsResponse {
+    pub channel: String,
+    pub year: i32,
+    pub total: u32,
+    pub streams: Vec<SullyStreamEntry>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SullyStreamEntry {
+    pub stream_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_iso: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_human: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_human: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length_minutes: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gamesplayed: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum TierMode {
+    All,
+    Online,
+    Offline,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Default)]
+pub struct TierModeQuery {
+    #[serde(default)]
+    pub mode: Option<TierMode>,
+    /// Comma-separated list of user ids or logins to exclude from tiers (e.g. bot accounts).
+    #[schemars(description = "Comma-separated user ids or logins to exclude from tiers (e.g. bot accounts, case-insensitive).", example = "\"moobot,nightbot\"")]
+    #[serde(default)]
+    pub exclude_bots: Option<String>,
 }

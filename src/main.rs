@@ -7,6 +7,8 @@ mod error;
 mod logs;
 mod migrator;
 mod web;
+mod mirror;
+mod supabase;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 pub type ShutdownRx = watch::Receiver<()>;
@@ -85,6 +87,15 @@ async fn main() -> anyhow::Result<()> {
             channel_id,
             jobs,
         }) => migrate(db, source_dir, channel_id, jobs).await,
+        Some(Command::Mirror {
+            base_url,
+            local_cache,
+            channel,
+            year,
+            month,
+            day,
+            batch,
+        }) => mirror::run(db, base_url, local_cache, channel, year, month, day, batch).await,
     }
 }
 

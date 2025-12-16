@@ -27,6 +27,10 @@ pub struct Config {
     pub opt_out: DashMap<String, bool>,
     #[serde(rename = "adminAPIKey")]
     pub admin_api_key: Option<String>,
+    #[serde(default)]
+    pub supabase_url: Option<String>,
+    #[serde(default)]
+    pub supabase_service_key: Option<String>,
 }
 
 impl Config {
