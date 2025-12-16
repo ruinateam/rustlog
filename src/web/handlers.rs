@@ -38,7 +38,7 @@ use serde::Deserialize;
 use serde_json;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
+// use std::process::Command; // not used
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, ACCEPT};
 
 const RESPONSE_LIMIT: usize = 500;

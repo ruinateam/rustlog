@@ -193,16 +193,6 @@ async fn process_day(
     }
 }
 
-async fn fetch_available(
-    http: &HttpClient,
-    base_url: &str,
-    channel: &str,
-) -> anyhow::Result<Vec<AvailableLogEntry>> {
-    let url = format!("{}/list?channel={}", base_url, channel);
-    let resp: AvailableLogsResp = http.get(url).send().await?.json().await?;
-    Ok(resp.available_logs.unwrap_or_default())
-}
-
 async fn fetch_available_remote(
     http: &HttpClient,
     base_url: &str,
@@ -284,7 +274,7 @@ async fn fetch_existing_keys(
          WHERE channel_login='{}' AND timestamp >= {} AND timestamp < {}",
         MESSAGES_STRUCTURED_TABLE, esc_channel, start_ms, end_ms
     );
-    let mut cursor = db.query(&sql).fetch::<(String, u64, String)>();
+    let mut cursor = db.query(&sql).fetch::<(String, u64, String)>()?;
     while let Some(row) = cursor.next().await? {
         set.insert(row);
     }
