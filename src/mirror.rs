@@ -284,8 +284,8 @@ async fn fetch_existing_keys(
          WHERE channel_login='{}' AND timestamp >= {} AND timestamp < {}",
         MESSAGES_STRUCTURED_TABLE, esc_channel, start_ms, end_ms
     );
-    let mut cursor = db.query(sql).fetch::<(String, u64, String)>();
-    while let Some(row) = cursor.next().await.transpose()? {
+    let mut cursor = db.query(&sql).fetch::<(String, u64, String)>();
+    while let Some(row) = cursor.next().await? {
         set.insert(row);
     }
     Ok(set)
@@ -331,6 +331,7 @@ fn map_message(
 
     let channel_id = msg.tags.get("room-id")?.to_owned();
     let user_id = msg.tags.get("user-id")?.to_owned();
+    let key_user_id = user_id.clone();
     let user_login = msg
         .display_name
         .as_deref()
@@ -413,7 +414,7 @@ fn map_message(
         extra_tags,
     };
 
-    let key: DedupKey = (user_id, ts, msg.text.unwrap_or_default());
+    let key: DedupKey = (key_user_id, ts, msg.text.unwrap_or_default());
     Some((structured, key))
 }
 
