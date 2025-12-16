@@ -1,7 +1,10 @@
-target/
 config.json
-ch-data/
-cache/
-*.log
+*.env
 .env
+cache/
 tmp/
+*.log
+/target/
+.vscode/
+.idea/
+.DS_Store
