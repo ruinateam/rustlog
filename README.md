@@ -94,3 +94,32 @@ You can now access rustlog at http://localhost:8025.
 
 ## Migrating from justlog
 See [MIGRATION.md](./docs/MIGRATION.md)
+
+## Mirroring existing logs into ClickHouse
+
+Если на VPS нет своих логов, можно подтянуть их с чужого rustlog/justlog (или из локального кэша) и записать в ClickHouse.
+
+Пример команд:
+```bash
+# 1) HTTP-зеркалирование с удалённого rustlog
+cargo run --release -- mirror \
+  --base-url https://logs.zonian.dev \
+  --channel zakvielchannel \
+  --year 2025 \
+  --month 12 \
+  --batch 1000
+
+# 2) Использовать локальный кэш вместо HTTP (структура cache/<channel>/daily/YYYY/MM/DD.json)
+cargo run --release -- mirror \
+  --local-cache /mnt/c/Users/Linar/Desktop/twitchlogs/cache \
+  --channel zakvielchannel \
+  --year 2025
+```
+Параметры:
+- `--channel` (обязательно) – логин канала.
+- `--base-url` – корень API rustlog/justlog (по умолчанию https://logs.zonian.dev).
+- `--local-cache` – путь к кэшу JSON (если указан, HTTP не используется).
+- `--year/--month/--day` – фильтры периода (опционально).
+- `--batch` – размер вставки в ClickHouse (по умолчанию 1000).
+
+После зеркалирования API отдаёт логи/tiers как будто они собраны локально. 
