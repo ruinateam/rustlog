@@ -2,10 +2,12 @@ use crate::db::schema::{MessageFlags, MessageType, StructuredMessage, MESSAGES_S
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use clickhouse::Client;
+use futures::{stream, StreamExt};
 use reqwest::Client as HttpClient;
 use serde::Deserialize;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -55,6 +57,8 @@ pub async fn run(
     let base_url = base_url.trim_end_matches('/').to_string();
     let http = HttpClient::builder()
         .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+        .tcp_nodelay(true)
+        .pool_max_idle_per_host(8)
         .user_agent("rustlog-mirror/0.1")
         .build()?;
 
@@ -82,45 +86,111 @@ pub async fn run(
     tasks.sort();
     info!("Found {} daily logs to mirror", tasks.len());
 
-    for (idx, (y, m, d)) in tasks.iter().enumerate() {
-        let msgs_result = if let Some(ref cache_root) = local_cache {
-            fetch_daily_local(cache_root, &channel, *y, *m, *d)
-        } else {
-            let url = format!(
-                "{}/channel/{}/{:04}/{:02}/{:02}?jsonBasic=1",
-                base_url, channel, y, m, d
-            );
-            fetch_daily_remote(&http, &url).await.map_err(|e| e.into())
-        };
+    let total = tasks.len();
+    let concurrency = 8usize;
 
-        match msgs_result {
-            Ok(msgs) => {
-                let mut buffer: Vec<StructuredMessage<'static>> = Vec::with_capacity(batch);
-                for msg in msgs {
-                    if let Some(mapped) = map_message(&channel, msg) {
-                        buffer.push(mapped);
-                        if buffer.len() >= batch {
-                            insert_batch(&db, &mut buffer).await?;
-                        }
-                    }
-                }
-                if !buffer.is_empty() {
-                    insert_batch(&db, &mut buffer).await?;
-                }
-                info!(
-                    "Imported {:>4}/{:02}/{:02} ({}/{})",
+    let mut stream = stream::iter(tasks.into_iter().enumerate())
+        .map(|(idx, (y, m, d))| {
+            let http = http.clone();
+            let db = db.clone();
+            let base_url = base_url.clone();
+            let channel = channel.clone();
+            let local_cache = local_cache.clone();
+            async move {
+                let started = Instant::now();
+                let res = process_day(
+                    &http,
+                    &db,
+                    &base_url,
+                    local_cache.as_deref(),
+                    &channel,
                     y,
                     m,
                     d,
-                    idx + 1,
-                    tasks.len()
-                );
+                    batch,
+                )
+                .await;
+                (idx, res, started.elapsed(), y, m, d)
             }
-            Err(err) => warn!("Skip {y}-{m:02}-{d:02}: {err}"),
+        })
+        .buffer_unordered(concurrency);
+
+    while let Some((idx, res, elapsed, y, m, d)) = stream.next().await {
+        match res {
+            Ok((added, skipped, existed)) => info!(
+                "[{:>3}/{:>3}] {:04}-{:02}-{:02} added={} skipped={} existing={} in {:?}",
+                idx + 1,
+                total,
+                y,
+                m,
+                d,
+                added,
+                skipped,
+                existed,
+                elapsed
+            ),
+            Err(err) => warn!("[{:>3}/{:>3}] {:04}-{:02}-{:02} failed: {}", idx + 1, total, y, m, d, err),
         }
     }
 
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn process_day(
+    http: &HttpClient,
+    db: &Client,
+    base_url: &str,
+    local_cache: Option<&str>,
+    channel: &str,
+    y: u32,
+    m: u32,
+    d: u32,
+    batch: usize,
+) -> anyhow::Result<(u64, u64, usize)> {
+    let msgs_result = if let Some(ref cache_root) = local_cache {
+        fetch_daily_local(cache_root, channel, y, m, d)
+    } else {
+        let url = format!(
+            "{}/channel/{}/{:04}/{:02}/{:02}?jsonBasic=1",
+            base_url, channel, y, m, d
+        );
+        fetch_daily_remote(http, &url).await.map_err(|e| e.into())
+    };
+
+    match msgs_result {
+        Ok(msgs) => {
+            let start_ms = chrono::NaiveDate::from_ymd_opt(y as i32, m, d)
+                .and_then(|d| d.and_hms_opt(0, 0, 0))
+                .map(|dt| dt.and_utc().timestamp_millis() as u64)
+                .unwrap_or(0);
+            let end_ms = start_ms.saturating_add(24 * 60 * 60 * 1000);
+            let mut seen = fetch_existing_keys(db, channel, start_ms, end_ms).await?;
+            let existed = seen.len();
+            let mut buffer: Vec<StructuredMessage<'static>> = Vec::with_capacity(batch);
+            let mut added: u64 = 0;
+            let mut processed: u64 = 0;
+            for msg in msgs {
+                processed += 1;
+                if let Some((mapped, key)) = map_message(channel, msg) {
+                    if !seen.insert(key) {
+                        continue;
+                    }
+                    buffer.push(mapped);
+                    added += 1;
+                    if buffer.len() >= batch {
+                        insert_batch(db, &mut buffer).await?;
+                    }
+                }
+            }
+            if !buffer.is_empty() {
+                insert_batch(db, &mut buffer).await?;
+            }
+            let skipped = processed.saturating_sub(added);
+            Ok((added, skipped, existed))
+        }
+        Err(err) => Err(err),
+    }
 }
 
 async fn fetch_available(
@@ -139,7 +209,13 @@ async fn fetch_available_remote(
     channel: &str,
 ) -> anyhow::Result<Vec<AvailableLogEntry>> {
     let url = format!("{}/list?channel={}", base_url, channel);
-    let resp: AvailableLogsResp = http.get(url).send().await?.json().await?;
+    let resp: AvailableLogsResp = http
+        .get(url)
+        .header("Accept-Encoding", "br, gzip, deflate")
+        .send()
+        .await?
+        .json()
+        .await?;
     Ok(resp.available_logs.unwrap_or_default())
 }
 
@@ -185,8 +261,34 @@ fn fetch_available_local(
 }
 
 async fn fetch_daily_remote(http: &HttpClient, url: &str) -> anyhow::Result<Vec<RemoteMessage>> {
-    let resp: DailyLogResp = http.get(url).send().await?.json().await?;
+    let resp: DailyLogResp = http
+        .get(url)
+        .header("Accept-Encoding", "br, gzip, deflate")
+        .send()
+        .await?
+        .json()
+        .await?;
     Ok(resp.messages.unwrap_or_default())
+}
+
+async fn fetch_existing_keys(
+    db: &Client,
+    channel_login: &str,
+    start_ms: u64,
+    end_ms: u64,
+) -> anyhow::Result<HashSet<DedupKey>> {
+    let mut set = HashSet::new();
+    let esc_channel = channel_login.replace('\'', "\\'");
+    let sql = format!(
+        "SELECT user_id, timestamp, text FROM {} \
+         WHERE channel_login='{}' AND timestamp >= {} AND timestamp < {}",
+        MESSAGES_STRUCTURED_TABLE, esc_channel, start_ms, end_ms
+    );
+    let mut cursor = db.query(sql).fetch::<(String, u64, String)>();
+    while let Some(row) = cursor.next().await.transpose()? {
+        set.insert(row);
+    }
+    Ok(set)
 }
 
 fn fetch_daily_local(
@@ -207,7 +309,12 @@ fn fetch_daily_local(
     Ok(resp.messages.unwrap_or_default())
 }
 
-fn map_message(channel_login: &str, msg: RemoteMessage) -> Option<StructuredMessage<'static>> {
+type DedupKey = (String, u64, String);
+
+fn map_message(
+    channel_login: &str,
+    msg: RemoteMessage,
+) -> Option<(StructuredMessage<'static>, DedupKey)> {
     let ts_str = msg.timestamp?;
     let ts_ms = DateTime::parse_from_rfc3339(&ts_str)
         .ok()?
@@ -276,7 +383,7 @@ fn map_message(channel_login: &str, msg: RemoteMessage) -> Option<StructuredMess
         extra_tags.push((k.to_string().into(), v.to_string().into()));
     }
 
-    Some(StructuredMessage {
+    let structured = StructuredMessage {
         channel_id: channel_id.into(),
         channel_login: channel_login.to_owned().into(),
         timestamp: ts,
@@ -301,10 +408,13 @@ fn map_message(channel_login: &str, msg: RemoteMessage) -> Option<StructuredMess
             .into(),
         emotes: msg.tags.get("emotes").cloned().unwrap_or_default().into(),
         automod_flags: msg.tags.get("flags").cloned().unwrap_or_default().into(),
-        text: msg.text.unwrap_or_default().into(),
+        text: msg.text.clone().unwrap_or_default().into(),
         message_flags: MessageFlags::empty(),
         extra_tags,
-    })
+    };
+
+    let key: DedupKey = (user_id, ts, msg.text.unwrap_or_default());
+    Some((structured, key))
 }
 
 async fn insert_batch(
@@ -314,6 +424,7 @@ async fn insert_batch(
     if buffer.is_empty() {
         return Ok(());
     }
+    let write_count = buffer.len();
     let mut inserter = db
         .insert(MESSAGES_STRUCTURED_TABLE)
         .context("open inserter")?;
@@ -321,5 +432,6 @@ async fn insert_batch(
         inserter.write(&row).await.context("write row")?;
     }
     inserter.end().await.context("flush inserter")?;
+    info!("Flushed batch of {}", write_count);
     Ok(())
 }
