@@ -24,7 +24,10 @@ pub async fn write_tier_snapshot(
     cfg: SupabaseConfig,
     payload: TierSnapshotPayload,
 ) -> anyhow::Result<()> {
-    let url = format!("{}/rest/v1/rpc/upsert_tier_snapshot", cfg.url.trim_end_matches('/'));
+    let url = format!(
+        "{}/rest/v1/rpc/upsert_tier_snapshot",
+        cfg.url.trim_end_matches('/')
+    );
 
     let client = reqwest::Client::new();
     let res = client

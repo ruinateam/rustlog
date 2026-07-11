@@ -10,13 +10,14 @@ use crate::{
 use anyhow::Context;
 use dashmap::DashSet;
 use std::{collections::HashMap, sync::Arc};
+use tokio::sync::RwLock;
 use tracing::{debug, info};
 use twitch_api::{helix::users::GetUsersRequest, twitch_oauth2::AppAccessToken, HelixClient};
 
 #[derive(Clone)]
 pub struct App {
     pub helix_client: HelixClient<'static, reqwest::Client>,
-    pub token: Arc<AppAccessToken>,
+    pub token: Arc<RwLock<Option<AppAccessToken>>>,
     pub users: UsersCache,
     pub optout_codes: Arc<DashSet<String>>,
     pub db: Arc<clickhouse::Client>,
@@ -25,6 +26,14 @@ pub struct App {
 }
 
 impl App {
+    async fn token(&self) -> Result<AppAccessToken> {
+        self.token
+            .read()
+            .await
+            .clone()
+            .ok_or(Error::TwitchTokenUnavailable)
+    }
+
     pub async fn get_users(
         &self,
         ids: Vec<String>,
@@ -61,13 +70,21 @@ impl App {
         }
 
         let mut new_users = Vec::with_capacity(ids_to_request.len() + names_to_request.len());
+        let token = if ids_to_request.is_empty() && names_to_request.is_empty() {
+            None
+        } else {
+            Some(self.token().await?)
+        };
 
         // There are no chunks if the vec is empty, so there is no empty request made
         for chunk in ids_to_request.chunks(100) {
             debug!("Requesting user info for ids {chunk:?}");
 
             let request = GetUsersRequest::ids(chunk);
-            let response = self.helix_client.req_get(request, &*self.token).await?;
+            let response = self
+                .helix_client
+                .req_get(request, token.as_ref().expect("token exists"))
+                .await?;
             new_users.extend(response.data);
         }
 
@@ -75,7 +92,10 @@ impl App {
             debug!("Requesting user info for names {chunk:?}");
 
             let request = GetUsersRequest::logins(chunk);
-            let response = self.helix_client.req_get(request, &*self.token).await?;
+            let response = self
+                .helix_client
+                .req_get(request, token.as_ref().expect("token exists"))
+                .await?;
             new_users.extend(response.data);
         }
 
@@ -108,8 +128,9 @@ impl App {
             Some(Some(id)) => Ok(id),
             Some(None) => Err(Error::NotFound),
             None => {
+                let token = self.token().await?;
                 let request = GetUsersRequest::logins(vec![name]);
-                let response = self.helix_client.req_get(request, &*self.token).await?;
+                let response = self.helix_client.req_get(request, &token).await?;
                 match response.data.into_iter().next() {
                     Some(user) => {
                         let user_id = user.id.to_string();

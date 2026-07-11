@@ -1,9 +1,23 @@
 use super::responders::logs::{JsonResponseType, LogsResponseType};
 use chrono::{DateTime, Utc};
-use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize};
+use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
+use serde::{
+    de::{Error as DeError, SeqAccess, Visitor},
+    Deserialize, Deserializer, Serialize,
+};
 use std::fmt::Display;
 use strum::Display;
+
+pub const DEFAULT_EXCLUDED_BOTS: &[&str] = &[
+    "twirapp",
+    "streamelements",
+    "nightbot",
+    "moobot",
+    "mejkizbot",
+    "supibot",
+    "potatbotat",
+    "fossabot",
+];
 
 #[derive(Serialize, JsonSchema)]
 pub struct ChannelsList {
@@ -91,17 +105,26 @@ pub struct ChannelYearPath {
 #[derive(Deserialize, Debug, JsonSchema, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 pub struct LogsParams {
+    /// Return the full JSON response shape.
     #[serde(default, deserialize_with = "deserialize_bool_param")]
     pub json: bool,
+    /// Return compact JSON with basic message fields.
     #[serde(default, deserialize_with = "deserialize_bool_param")]
     pub json_basic: bool,
+    /// Return raw IRC lines.
     #[serde(default, deserialize_with = "deserialize_bool_param")]
     pub raw: bool,
+    /// Reverse log order.
     #[serde(default, deserialize_with = "deserialize_bool_param")]
     pub reverse: bool,
+    /// Return newline-delimited JSON.
     #[serde(default, deserialize_with = "deserialize_bool_param")]
     pub ndjson: bool,
+    /// Maximum number of messages to return.
+    #[schemars(range(min = 1), example = 100)]
     pub limit: Option<u64>,
+    /// Number of messages to skip before returning results.
+    #[schemars(range(min = 0), example = 0)]
     pub offset: Option<u64>,
 }
 
@@ -125,7 +148,15 @@ fn deserialize_bool_param<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Ok(Option::<&str>::deserialize(deserializer)?.is_some())
+    let Some(value) = Option::<&str>::deserialize(deserializer)? else {
+        return Ok(false);
+    };
+
+    match value.to_ascii_lowercase().as_str() {
+        "" | "true" | "1" => Ok(true),
+        "false" | "0" => Ok(false),
+        _ => Ok(true),
+    }
 }
 
 #[derive(Deserialize, Debug, JsonSchema)]
@@ -162,7 +193,7 @@ impl Display for AvailableLogDate {
 #[derive(Deserialize, JsonSchema)]
 pub struct AvailableLogsParams {
     #[serde(flatten)]
-    pub channel: ChannelParam,
+    pub channel: Option<ChannelParam>,
     #[serde(flatten)]
     pub user: Option<UserParam>,
 }
@@ -323,10 +354,98 @@ pub enum TierMode {
 
 #[derive(Serialize, Deserialize, JsonSchema, Default)]
 pub struct TierModeQuery {
-    #[serde(default)]
-    pub mode: Option<TierMode>,
-    /// Comma-separated list of user ids or logins to exclude from tiers (e.g. bot accounts).
-    #[schemars(description = "Comma-separated user ids or logins to exclude from tiers (e.g. bot accounts, case-insensitive).", example = "\"moobot,nightbot\"")]
-    #[serde(default)]
-    pub exclude_bots: Option<String>,
+    /// Which messages are included in tier calculations.
+    #[schemars(
+        description = "Tier calculation mode: all messages, messages sent while the stream was online, or messages sent while the stream was offline."
+    )]
+    #[serde(default = "default_tier_mode")]
+    pub mode: TierMode,
+    /// Bot logins excluded from tier tables.
+    #[schemars(schema_with = "exclude_bots_schema")]
+    #[serde(
+        default = "default_exclude_bots",
+        deserialize_with = "deserialize_exclude_bots"
+    )]
+    pub exclude_bots: Vec<String>,
+}
+
+impl Default for TierMode {
+    fn default() -> Self {
+        Self::All
+    }
+}
+
+fn default_tier_mode() -> TierMode {
+    TierMode::All
+}
+
+pub fn default_exclude_bots() -> Vec<String> {
+    DEFAULT_EXCLUDED_BOTS
+        .iter()
+        .map(|bot| (*bot).to_owned())
+        .collect()
+}
+
+fn exclude_bots_schema(_: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "array",
+        "description": "Bot logins excluded from tier tables. The default excludes common Twitch bots.",
+        "items": {
+            "type": "string",
+            "enum": DEFAULT_EXCLUDED_BOTS
+        },
+        "uniqueItems": true
+    })
+}
+
+fn deserialize_exclude_bots<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct ExcludeBotsVisitor;
+
+    impl<'de> Visitor<'de> for ExcludeBotsVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a comma-separated string or a list of bot logins")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: DeError,
+        {
+            Ok(split_bot_list(value))
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+        where
+            E: DeError,
+        {
+            Ok(split_bot_list(&value))
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut bots = Vec::new();
+
+            while let Some(value) = seq.next_element::<String>()? {
+                bots.extend(split_bot_list(&value));
+            }
+
+            Ok(bots)
+        }
+    }
+
+    deserializer.deserialize_any(ExcludeBotsVisitor)
+}
+
+fn split_bot_list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|bot| bot.trim().to_lowercase())
+        .filter(|bot| !bot.is_empty())
+        .collect()
 }

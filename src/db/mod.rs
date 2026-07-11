@@ -18,9 +18,9 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use clickhouse::{query::RowCursor, Client, Row};
-use std::collections::HashMap;
 use rand::{rng, seq::IteratorRandom};
 use schema::StructuredMessage;
+use std::collections::HashMap;
 use tracing::debug;
 
 const CHANNEL_MULTI_QUERY_SIZE_DAYS: i64 = 14;

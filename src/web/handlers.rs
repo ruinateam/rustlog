@@ -1,18 +1,19 @@
 use super::{
     responders::logs::LogsResponse,
     schema::{
-        AvailableLogs, AvailableLogsParams, Channel, ChannelIdType, ChannelLogsByDatePath,
-        ChannelLogsStats, ChannelMonthPath, ChannelParam, ChannelsList, LogsParams, LogsPathChannel,
-        ChannelYearPath, ChannelDayPath, SearchParams, TierEntry, TierResponse, TierYearResponse, TierDayResponse, UserIdType, UserLogPathParams, UserLogsDatePath,
+        AvailableLogs, AvailableLogsParams, Channel, ChannelDayPath, ChannelIdType,
+        ChannelLogsByDatePath, ChannelLogsStats, ChannelMonthPath, ChannelParam, ChannelYearPath,
+        ChannelsList, LogsParams, LogsPathChannel, SearchParams, TierDayResponse, TierEntry,
+        TierResponse, TierYearResponse, UserIdType, UserLogPathParams, UserLogsDatePath,
         UserLogsStats, UserNameHistoryParam, UserParam,
     },
 };
 use crate::{
     app::App,
     db::{
-        self, get_month_windows, get_month_windows_with_ranges, get_day_windows, get_day_windows_with_ranges, read_available_channel_logs,
-        read_available_user_logs, read_channel, read_random_channel_line, read_random_user_line,
-        read_user, WindowsAggRow,
+        self, get_day_windows, get_day_windows_with_ranges, get_month_windows,
+        get_month_windows_with_ranges, read_available_channel_logs, read_available_user_logs,
+        read_channel, read_random_channel_line, read_random_user_line, read_user, WindowsAggRow,
     },
     error::Error,
     logs::{schema::LogRangeParams, stream::LogsStream},
@@ -27,19 +28,19 @@ use axum::{
     Json,
 };
 use axum_extra::{headers::CacheControl, TypedHeader};
-use chrono::{DateTime, Days, Months, NaiveDate, NaiveTime, Utc, Datelike};
 use chrono::offset::FixedOffset;
+use chrono::{DateTime, Datelike, Days, Months, NaiveDate, NaiveTime, Utc};
 use rand::{distr::Alphanumeric, rng, Rng};
-use std::collections::{HashMap, HashSet};
-use std::time::Duration;
-use tracing::{debug, error, warn};
 use reqwest::Client as HttpClient;
 use serde::Deserialize;
 use serde_json;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
+use tracing::{debug, error, warn};
 // use std::process::Command; // not used
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, ACCEPT};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 
 const RESPONSE_LIMIT: usize = 500;
 const TIER_TIMEZONE: &str = "Europe/Moscow";
@@ -176,11 +177,17 @@ async fn load_sully_streams(channel: &str, year: i32) -> Option<SullyStreamsResp
                     return Some(resp);
                 }
                 Err(e) => {
-                    error!("sully fetch streams failed channel={} year={} err={:?}", channel, year, e);
+                    error!(
+                        "sully fetch streams failed channel={} year={} err={:?}",
+                        channel, year, e
+                    );
                 }
             },
             Err(e) => {
-                error!("sully fetch internal_id failed channel={} err={:?}", channel, e);
+                error!(
+                    "sully fetch internal_id failed channel={} err={:?}",
+                    channel, e
+                );
             }
         };
     }
@@ -193,7 +200,10 @@ async fn load_sully_streams(channel: &str, year: i32) -> Option<SullyStreamsResp
         );
         Some(cached)
     } else {
-        warn!("sully fetch failed and no cache available channel={} year={}", channel, year);
+        warn!(
+            "sully fetch failed and no cache available channel={} year={}",
+            channel, year
+        );
         None
     }
 }
@@ -214,20 +224,15 @@ pub async fn get_channel_tiers_month(
     app.check_opted_out(&channel_id, None)?;
 
     let year: i32 = month_path.year.parse()?;
-    let month: u32 = normalize_month(month_path.month.parse()?)?;
+    let month = normalize_month(month_path.month.parse()?)?;
     let yyyymm = year * 100 + month as i32;
 
-    let mode = mode_query.mode.unwrap_or(TierMode::All);
+    let mode = mode_query.mode;
     let bot_filter: HashSet<String> = mode_query
         .exclude_bots
-        .as_ref()
-        .map(|s| {
-            s.split(',')
-                .map(|v| v.trim().to_lowercase())
-                .filter(|v| !v.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
+        .iter()
+        .map(|bot| bot.to_lowercase())
+        .collect();
 
     // Determine intervals from Sully for this month. Always try live fetch, fallback to cache.
     let streams = load_sully_streams(&month_path.channel_info.channel, year).await;
@@ -239,37 +244,49 @@ pub async fn get_channel_tiers_month(
 
     let rows = match mode {
         TierMode::All => get_month_windows(&app.db, &channel_id, yyyymm).await?,
-        TierMode::Online => get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &intervals, true)
-            .await?
-            .into_iter()
-            .map(|(user_id, agg)| WindowsAggRow {
-                user_id,
-                messages: agg.messages,
-                uniq_messages: agg.uniq_messages,
-                w1: agg.w1,
-                w5: agg.w5,
-                w30: agg.w30,
-                w15: agg.w15,
-                w60: agg.w60,
-            })
-            .collect(),
+        TierMode::Online => {
+            get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &intervals, true)
+                .await?
+                .into_iter()
+                .map(|(user_id, agg)| WindowsAggRow {
+                    user_id,
+                    messages: agg.messages,
+                    uniq_messages: agg.uniq_messages,
+                    w1: agg.w1,
+                    w5: agg.w5,
+                    w30: agg.w30,
+                    w15: agg.w15,
+                    w60: agg.w60,
+                })
+                .collect()
+        }
         TierMode::Offline => {
-            let online = get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &intervals, true).await?;
+            let online =
+                get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &intervals, true)
+                    .await?;
             let all = get_month_windows(&app.db, &channel_id, yyyymm).await?;
             all.into_iter()
                 .map(|row| {
                     let online_row = online.get(&row.user_id);
                     WindowsAggRow {
                         user_id: row.user_id,
-                        messages: row.messages.saturating_sub(online_row.map(|o| o.messages).unwrap_or(0)),
+                        messages: row
+                            .messages
+                            .saturating_sub(online_row.map(|o| o.messages).unwrap_or(0)),
                         uniq_messages: row
                             .uniq_messages
                             .saturating_sub(online_row.map(|o| o.uniq_messages).unwrap_or(0)),
                         w1: row.w1.saturating_sub(online_row.map(|o| o.w1).unwrap_or(0)),
                         w5: row.w5.saturating_sub(online_row.map(|o| o.w5).unwrap_or(0)),
-                        w15: row.w15.saturating_sub(online_row.map(|o| o.w15).unwrap_or(0)),
-                        w30: row.w30.saturating_sub(online_row.map(|o| o.w30).unwrap_or(0)),
-                        w60: row.w60.saturating_sub(online_row.map(|o| o.w60).unwrap_or(0)),
+                        w15: row
+                            .w15
+                            .saturating_sub(online_row.map(|o| o.w15).unwrap_or(0)),
+                        w30: row
+                            .w30
+                            .saturating_sub(online_row.map(|o| o.w30).unwrap_or(0)),
+                        w60: row
+                            .w60
+                            .saturating_sub(online_row.map(|o| o.w60).unwrap_or(0)),
                     }
                 })
                 .filter(|r| r.w1 > 0 || r.w5 > 0 || r.w15 > 0 || r.w30 > 0 || r.w60 > 0)
@@ -441,21 +458,16 @@ pub async fn get_channel_tiers_day(
     app.check_opted_out(&channel_id, None)?;
 
     let year: i32 = day_path.year.parse()?;
-    let month: u32 = normalize_month(day_path.month.parse()?)?;
-    let day: u32 = normalize_day(year, month, day_path.day.parse()?)?;
+    let month = normalize_month(day_path.month.parse()?)?;
+    let day = normalize_day(year, month, day_path.day.parse()?)?;
     let yyyymmdd = year * 10000 + (month as i32) * 100 + day as i32;
 
-    let mode = mode_query.mode.unwrap_or(TierMode::All);
+    let mode = mode_query.mode;
     let bot_filter: HashSet<String> = mode_query
         .exclude_bots
-        .as_ref()
-        .map(|s| {
-            s.split(',')
-                .map(|v| v.trim().to_lowercase())
-                .filter(|v| !v.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
+        .iter()
+        .map(|bot| bot.to_lowercase())
+        .collect();
 
     // Determine intervals from Sully for this day. Always try live fetch, fallback to cache.
     let streams = load_sully_streams(&day_path.channel_info.channel, year).await;
@@ -467,37 +479,49 @@ pub async fn get_channel_tiers_day(
 
     let rows = match mode {
         TierMode::All => get_day_windows(&app.db, &channel_id, yyyymmdd).await?,
-        TierMode::Online => get_day_windows_with_ranges(&app.db, &channel_id, yyyymmdd, &intervals, true)
-            .await?
-            .into_iter()
-            .map(|(user_id, agg)| WindowsAggRow {
-                user_id,
-                messages: agg.messages,
-                uniq_messages: agg.uniq_messages,
-                w1: agg.w1,
-                w5: agg.w5,
-                w15: agg.w15,
-                w30: agg.w30,
-                w60: agg.w60,
-            })
-            .collect(),
+        TierMode::Online => {
+            get_day_windows_with_ranges(&app.db, &channel_id, yyyymmdd, &intervals, true)
+                .await?
+                .into_iter()
+                .map(|(user_id, agg)| WindowsAggRow {
+                    user_id,
+                    messages: agg.messages,
+                    uniq_messages: agg.uniq_messages,
+                    w1: agg.w1,
+                    w5: agg.w5,
+                    w15: agg.w15,
+                    w30: agg.w30,
+                    w60: agg.w60,
+                })
+                .collect()
+        }
         TierMode::Offline => {
-            let online = get_day_windows_with_ranges(&app.db, &channel_id, yyyymmdd, &intervals, true).await?;
+            let online =
+                get_day_windows_with_ranges(&app.db, &channel_id, yyyymmdd, &intervals, true)
+                    .await?;
             let all = get_day_windows(&app.db, &channel_id, yyyymmdd).await?;
             all.into_iter()
                 .map(|row| {
                     let online_row = online.get(&row.user_id);
                     WindowsAggRow {
                         user_id: row.user_id,
-                        messages: row.messages.saturating_sub(online_row.map(|o| o.messages).unwrap_or(0)),
+                        messages: row
+                            .messages
+                            .saturating_sub(online_row.map(|o| o.messages).unwrap_or(0)),
                         uniq_messages: row
                             .uniq_messages
                             .saturating_sub(online_row.map(|o| o.uniq_messages).unwrap_or(0)),
                         w1: row.w1.saturating_sub(online_row.map(|o| o.w1).unwrap_or(0)),
                         w5: row.w5.saturating_sub(online_row.map(|o| o.w5).unwrap_or(0)),
-                        w15: row.w15.saturating_sub(online_row.map(|o| o.w15).unwrap_or(0)),
-                        w30: row.w30.saturating_sub(online_row.map(|o| o.w30).unwrap_or(0)),
-                        w60: row.w60.saturating_sub(online_row.map(|o| o.w60).unwrap_or(0)),
+                        w15: row
+                            .w15
+                            .saturating_sub(online_row.map(|o| o.w15).unwrap_or(0)),
+                        w30: row
+                            .w30
+                            .saturating_sub(online_row.map(|o| o.w30).unwrap_or(0)),
+                        w60: row
+                            .w60
+                            .saturating_sub(online_row.map(|o| o.w60).unwrap_or(0)),
                     }
                 })
                 .filter(|r| r.w1 > 0 || r.w5 > 0 || r.w15 > 0 || r.w30 > 0 || r.w60 > 0)
@@ -653,29 +677,28 @@ pub async fn get_channel_tiers_year(
     Query(mode_query): Query<TierModeQuery>,
 ) -> Result<impl IntoApiResponse> {
     let channel_id = match year_path.channel_info.channel_id_type {
-        ChannelIdType::Name => app.get_user_id_by_name(&year_path.channel_info.channel).await?,
+        ChannelIdType::Name => {
+            app.get_user_id_by_name(&year_path.channel_info.channel)
+                .await?
+        }
         ChannelIdType::Id => year_path.channel_info.channel.clone(),
     };
 
     app.check_opted_out(&channel_id, None)?;
 
     let year: i32 = year_path.year.parse()?;
-    let mode = mode_query.mode.unwrap_or(TierMode::All);
+    let mode = mode_query.mode;
     let bot_filter: HashSet<String> = mode_query
         .exclude_bots
-        .as_ref()
-        .map(|s| {
-            s.split(',')
-                .map(|v| v.trim().to_lowercase())
-                .filter(|v| !v.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
+        .iter()
+        .map(|bot| bot.to_lowercase())
+        .collect();
 
     // Fetch sully streams once for all months (for online/offline mode) - prefer live fetch.
-    let streams: Option<Vec<SullyStreamEntry>> = load_sully_streams(&year_path.channel_info.channel, year)
-        .await
-        .map(|resp| resp.streams);
+    let streams: Option<Vec<SullyStreamEntry>> =
+        load_sully_streams(&year_path.channel_info.channel, year)
+            .await
+            .map(|resp| resp.streams);
 
     // For each month aggregate windows
     let mut rows_by_user: HashMap<String, WindowsAggRow> = HashMap::new();
@@ -688,37 +711,54 @@ pub async fn get_channel_tiers_year(
 
         let month_rows: Vec<WindowsAggRow> = match mode {
             TierMode::All => get_month_windows(&app.db, &channel_id, yyyymm).await?,
-            TierMode::Online => get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &month_intervals, true)
-                .await?
-                .into_iter()
-                .map(|(user_id, agg)| WindowsAggRow {
-                    user_id,
-                    messages: agg.messages,
-                    uniq_messages: agg.uniq_messages,
-                    w1: agg.w1,
-                    w5: agg.w5,
-                    w15: agg.w15,
-                    w30: agg.w30,
-                    w60: agg.w60,
-                })
-                .collect(),
+            TierMode::Online => {
+                get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &month_intervals, true)
+                    .await?
+                    .into_iter()
+                    .map(|(user_id, agg)| WindowsAggRow {
+                        user_id,
+                        messages: agg.messages,
+                        uniq_messages: agg.uniq_messages,
+                        w1: agg.w1,
+                        w5: agg.w5,
+                        w15: agg.w15,
+                        w30: agg.w30,
+                        w60: agg.w60,
+                    })
+                    .collect()
+            }
             TierMode::Offline => {
-                let online = get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &month_intervals, true).await?;
+                let online = get_month_windows_with_ranges(
+                    &app.db,
+                    &channel_id,
+                    yyyymm,
+                    &month_intervals,
+                    true,
+                )
+                .await?;
                 let all = get_month_windows(&app.db, &channel_id, yyyymm).await?;
                 all.into_iter()
                     .map(|row| {
                         let online_row = online.get(&row.user_id);
                         WindowsAggRow {
                             user_id: row.user_id,
-                            messages: row.messages.saturating_sub(online_row.map(|o| o.messages).unwrap_or(0)),
+                            messages: row
+                                .messages
+                                .saturating_sub(online_row.map(|o| o.messages).unwrap_or(0)),
                             uniq_messages: row
                                 .uniq_messages
                                 .saturating_sub(online_row.map(|o| o.uniq_messages).unwrap_or(0)),
                             w1: row.w1.saturating_sub(online_row.map(|o| o.w1).unwrap_or(0)),
                             w5: row.w5.saturating_sub(online_row.map(|o| o.w5).unwrap_or(0)),
-                            w15: row.w15.saturating_sub(online_row.map(|o| o.w15).unwrap_or(0)),
-                            w30: row.w30.saturating_sub(online_row.map(|o| o.w30).unwrap_or(0)),
-                            w60: row.w60.saturating_sub(online_row.map(|o| o.w60).unwrap_or(0)),
+                            w15: row
+                                .w15
+                                .saturating_sub(online_row.map(|o| o.w15).unwrap_or(0)),
+                            w30: row
+                                .w30
+                                .saturating_sub(online_row.map(|o| o.w30).unwrap_or(0)),
+                            w60: row
+                                .w60
+                                .saturating_sub(online_row.map(|o| o.w60).unwrap_or(0)),
                         }
                     })
                     .filter(|r| r.w1 > 0 || r.w5 > 0 || r.w15 > 0 || r.w30 > 0 || r.w60 > 0)
@@ -885,30 +925,28 @@ pub async fn get_sully_streams(
 ) -> Result<impl IntoApiResponse> {
     // Prefer live fetch, log failures, fall back to cache.
     match build_http_client() {
-        Ok(http) => {
-            match fetch_sully_id(&http, &channel).await {
-                Ok(internal_id) => match fetch_sully_streams(&http, &internal_id, year).await {
-                    Ok((total, data)) => {
-                        let response = SullyStreamsResponse {
-                            channel: channel.clone(),
-                            year,
-                            total,
-                            streams: data.clone(),
-                        };
-                        let _ = write_sully_cache(&channel, year, &response);
-                        return Ok((cache_header(600), Json(response)));
-                    }
-                    Err(e) => error!(
-                        "sully endpoint: fetch streams failed channel={} year={} err={:?}",
-                        channel, year, e
-                    ),
-                },
+        Ok(http) => match fetch_sully_id(&http, &channel).await {
+            Ok(internal_id) => match fetch_sully_streams(&http, &internal_id, year).await {
+                Ok((total, data)) => {
+                    let response = SullyStreamsResponse {
+                        channel: channel.clone(),
+                        year,
+                        total,
+                        streams: data.clone(),
+                    };
+                    let _ = write_sully_cache(&channel, year, &response);
+                    return Ok((cache_header(600), Json(response)));
+                }
                 Err(e) => error!(
-                    "sully endpoint: fetch internal_id failed channel={} err={:?}",
-                    channel, e
+                    "sully endpoint: fetch streams failed channel={} year={} err={:?}",
+                    channel, year, e
                 ),
-            }
-        }
+            },
+            Err(e) => error!(
+                "sully endpoint: fetch internal_id failed channel={} err={:?}",
+                channel, e
+            ),
+        },
         Err(e) => {
             error!("sully endpoint: build_http_client failed err={:?}", e);
         }
@@ -937,10 +975,9 @@ pub async fn get_channel_logs_by_date(
     };
 
     let LogsPathDate { year, month, day } = channel_log_params.date;
-
     let year: i32 = year.parse()?;
-    let month: u32 = normalize_month(month.parse()?)?;
-    let day: u32 = day.parse()?;
+    let month = normalize_month(month.parse()?)?;
+    let day = normalize_day(year, month, day.parse()?)?;
 
     let from = NaiveDate::from_ymd_opt(year, month, day)
         .ok_or_else(|| Error::InvalidParam("Invalid date".to_owned()))?
@@ -1023,7 +1060,7 @@ pub async fn get_user_logs_by_date(
     app.check_opted_out(&channel_id, Some(&user_id))?;
 
     let year: i32 = user_logs_date.year.parse()?;
-    let month: u32 = normalize_month(user_logs_date.month.parse()?)?;
+    let month = normalize_month(user_logs_date.month.parse()?)?;
 
     let from = NaiveDate::from_ymd_opt(year, month, 1)
         .ok_or_else(|| Error::InvalidParam("Invalid date".to_owned()))?
@@ -1071,6 +1108,9 @@ pub async fn list_available_logs(
     Query(AvailableLogsParams { user, channel }): Query<AvailableLogsParams>,
     app: State<App>,
 ) -> Result<impl IntoApiResponse> {
+    let channel = channel.ok_or_else(|| {
+        Error::InvalidParam("Specify query parameter: channel or channelid".to_owned())
+    })?;
     let channel_id = match channel {
         ChannelParam::ChannelId(id) => id,
         ChannelParam::Channel(name) => app.get_user_id_by_name(&name).await?,
@@ -1273,8 +1313,12 @@ fn spawn_supabase_tiers(
     total_unique: u64,
     entries: &[TierEntry],
 ) {
-    let Some(url) = app.config.supabase_url.clone() else { return };
-    let Some(service_key) = app.config.supabase_service_key.clone() else { return };
+    let Some(url) = app.config.supabase_url.clone() else {
+        return;
+    };
+    let Some(service_key) = app.config.supabase_service_key.clone() else {
+        return;
+    };
 
     let p_total_users = match i32::try_from(total_users) {
         Ok(v) => v,
@@ -1286,14 +1330,20 @@ fn spawn_supabase_tiers(
     let p_total_messages = match i32::try_from(total_messages) {
         Ok(v) => v,
         Err(_) => {
-            warn!("supabase skip: total_messages overflow ({}).", total_messages);
+            warn!(
+                "supabase skip: total_messages overflow ({}).",
+                total_messages
+            );
             return;
         }
     };
     let p_total_unique_messages = match i32::try_from(total_unique) {
         Ok(v) => v,
         Err(_) => {
-            warn!("supabase skip: total_unique_messages overflow ({}).", total_unique);
+            warn!(
+                "supabase skip: total_unique_messages overflow ({}).",
+                total_unique
+            );
             return;
         }
     };
@@ -1443,9 +1493,8 @@ async fn fetch_sully_streams(
     let mut offset: u32 = 0;
     let limit: u32 = 2000;
     let mut streams = Vec::new();
-    let mut total: u32 = 0;
 
-    loop {
+    let total = loop {
         let url = format!(
             "https://sullygnome.com/api/tables/channeltables/streams/{year}/{internal_id}/%20/1/1/desc/{offset}/{limit}"
         );
@@ -1473,14 +1522,14 @@ async fn fetch_sully_streams(
             );
             Error::Internal
         })?;
-        total = parsed.total;
+        let total = parsed.total;
         let count_added = parsed.streams.len() as u32;
         streams.extend(parsed.streams);
         offset += limit;
         if offset >= total || count_added == 0 {
-            break;
+            break total;
         }
-    }
+    };
 
     Ok((total, streams))
 }
@@ -1530,13 +1579,29 @@ fn parse_sully_body(channel: &str, year: i32, body: &str) -> Result<SullyStreams
                         .get("streamId")
                         .and_then(|v| v.as_i64())
                         .map(|v| v.to_string())
-                        .or_else(|| row.get("streamId").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                        .or_else(|| {
+                            row.get("streamId")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                        })
                         .unwrap_or_default(),
-                    start_iso: row.get("startDateTime").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    start_human: row.get("starttime").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    end_human: row.get("endtime").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    start_iso: row
+                        .get("startDateTime")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    start_human: row
+                        .get("starttime")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    end_human: row
+                        .get("endtime")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     length_minutes: len_minutes,
-                    gamesplayed: row.get("gamesplayed").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    gamesplayed: row
+                        .get("gamesplayed")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
         }
@@ -1562,11 +1627,7 @@ fn read_sully_cache(channel: &str, year: i32) -> Option<SullyStreamsResponse> {
     parse_sully_body(channel, year, &data).ok()
 }
 
-fn write_sully_cache(
-    channel: &str,
-    year: i32,
-    resp: &SullyStreamsResponse,
-) -> std::io::Result<()> {
+fn write_sully_cache(channel: &str, year: i32, resp: &SullyStreamsResponse) -> std::io::Result<()> {
     let path = sully_cache_path(channel, year);
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
@@ -1575,11 +1636,7 @@ fn write_sully_cache(
     fs::write(path, data)
 }
 
-fn intervals_for_month(
-    year: i32,
-    month: u32,
-    streams: &[SullyStreamEntry],
-) -> Vec<(i64, i64)> {
+fn intervals_for_month(year: i32, month: u32, streams: &[SullyStreamEntry]) -> Vec<(i64, i64)> {
     let moscow = FixedOffset::east_opt(3 * 3600).unwrap();
     let month_start = NaiveDate::from_ymd_opt(year, month, 1)
         .unwrap()
@@ -1597,7 +1654,9 @@ fn intervals_for_month(
         .filter_map(|s| {
             let start_iso = s.start_iso.as_ref()?;
             let length = s.length_minutes?;
-            let start = DateTime::parse_from_rfc3339(start_iso).ok()?.with_timezone(&moscow);
+            let start = DateTime::parse_from_rfc3339(start_iso)
+                .ok()?
+                .with_timezone(&moscow);
             let end = start + chrono::Duration::minutes(length as i64);
             let from = std::cmp::max(start, month_start);
             let to = std::cmp::min(end, month_end);
@@ -1633,7 +1692,9 @@ fn intervals_for_day(
         .filter_map(|s| {
             let start_iso = s.start_iso.as_ref()?;
             let length = s.length_minutes?;
-            let start = DateTime::parse_from_rfc3339(start_iso).ok()?.with_timezone(&moscow);
+            let start = DateTime::parse_from_rfc3339(start_iso)
+                .ok()?
+                .with_timezone(&moscow);
             let end = start + chrono::Duration::minutes(length as i64);
             let from = std::cmp::max(start, day_start);
             let to = std::cmp::min(end, day_end);

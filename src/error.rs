@@ -18,6 +18,8 @@ pub enum Error {
     InvalidParam(String),
     #[error("Internal error")]
     Internal,
+    #[error("Twitch token is not ready yet")]
+    TwitchTokenUnavailable,
     #[error("Database error")]
     Clickhouse(#[from] clickhouse::error::Error),
     #[error("The requested channel has opted out of being logged")]
@@ -32,6 +34,7 @@ impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let status_code = match &self {
             Error::Helix(_) | Error::Io(_) | Error::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::TwitchTokenUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             Error::Clickhouse(error) => {
                 error!("DB error: {error}");
                 StatusCode::INTERNAL_SERVER_ERROR

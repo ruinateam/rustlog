@@ -12,21 +12,22 @@ use aide::{
         routing::{get, get_with, post, post_with},
         ApiRouter, IntoApiResponse,
     },
-    openapi::OpenApi,
+    openapi::{Info, OpenApi, Operation, ParameterSchemaOrContent, ReferenceOr, Server},
     scalar::Scalar,
 };
 use axum::{
     extract::Request,
     middleware::{self, Next},
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     Extension, Json, ServiceExt,
 };
 use axum_prometheus::PrometheusMetricLayerBuilder;
 use prometheus::TextEncoder;
+use serde_json::json;
 use std::{
     net::{AddrParseError, SocketAddr},
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 use tokio::{net::TcpListener, sync::mpsc::Sender};
 use tower_http::{
@@ -36,6 +37,19 @@ use tower_http::{
 use tracing::{debug, info};
 
 const CAPABILITIES: &[&str] = &["arbitrary-range-query", "search", "stats", "namehistory"];
+const SCALAR_SPEC_URL: &str = "/openapi.json";
+const SCALAR_PAGE_TITLE: &str = "ChatTiers Rustlog API";
+const SCALAR_HEAD_INJECT: &str = r#"
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --scalar-font: 'Inter', sans-serif;
+    --scalar-font-code: 'JetBrains Mono', monospace;
+  }
+</style>
+"#;
 
 pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessage>) {
     aide::generate::on_error(|error| {
@@ -51,125 +65,177 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
 
     let cors = CorsLayer::permissive();
 
-    let mut api = OpenApi::default();
+    let mut api = OpenApi {
+        info: Info {
+            title: "ChatTiers Rustlog API".to_owned(),
+            summary: Some(
+                "Query chat logs, search history, inspect stats, and manage live logging."
+                    .to_owned(),
+            ),
+            description: Some(
+                "Use `channel` / `user` when you want login-based routes and `channelid` / `userid` when you already have Twitch ids.\n\nFor log endpoints, append `?json`, `?jsonBasic`, `?raw`, or `?ndjson` to switch the response format."
+                    .to_owned(),
+            ),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            ..Info::default()
+        },
+        servers: vec![Server {
+            url: "/".to_owned(),
+            description: Some("Current rustlog instance".to_owned()),
+            ..Server::default()
+        }],
+        ..OpenApi::default()
+    };
 
     let admin_routes = ApiRouter::new()
         .api_route(
             "/channels",
             post_with(admin::add_channels, |mut op| {
                 admin::admin_auth_doc(&mut op);
-                op.tag("Admin").description("Join the specified channels")
+                op.summary("Join channels for live logging")
+                    .tag("Admin")
+                    .description("Join the specified channels")
             })
             .delete_with(admin::remove_channels, |mut op| {
                 admin::admin_auth_doc(&mut op);
-                op.tag("Admin").description("Leave the specified channels")
+                op.summary("Leave channels and stop live logging")
+                    .tag("Admin")
+                    .description("Leave the specified channels")
             }),
         )
         .route_layer(middleware::from_fn_with_state(app.clone(), admin_auth))
         .layer(Extension(bot_tx));
 
-    let app = ApiRouter::new()
+    let router = ApiRouter::new()
         .nest("/admin", admin_routes)
         .api_route(
             "/channels",
             get_with(handlers::get_channels, |op| {
-                op.description("List logged channels")
+                op.summary("List logged channels").description(
+                    "Return the channel logins and Twitch ids currently configured for live logging.",
+                )
             }),
         )
         .api_route(
             "/list",
             get_with(handlers::list_available_logs, |op| {
-                op.description("List available logs")
+                op.summary("List available log buckets").description(
+                    "Show which years, months, or days exist. Without query parameters, returns buckets for all configured channels. With `channel` or `channelid`, returns buckets for that channel, optionally narrowed to a specific user.",
+                )
             }),
         )
         // Paths with static parts should go first so they aren't overridden by the dynamic date paths later
         .api_route(
             "/namehistory/{user_id}",
             get_with(handlers::get_user_name_history, |op| {
-                op.description("Get user name history by provided user id")
+                op.summary("Get historical logins for a user id").description(
+                    "Return previous usernames seen for the provided Twitch user id together with their first and last timestamps.",
+                )
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/{user_id_type}/{user}/search",
             get_with(handlers::search_user_logs, |op| {
-                op.description("Search user logs using the provided query")
+                op.summary("Search a user's messages in a channel")
+                    .description("Run a text search over one user's messages inside one channel.")
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/{user_id_type}/{user}/stats",
             get_with(handlers::get_user_stats, |op| {
-                op.description("Get user stats")
+                op.summary("Get per-user message stats").description(
+                    "Return message totals and related aggregates for one user in one channel.",
+                )
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/stats",
             get_with(handlers::get_channel_stats, |op| {
-                op.description("Get channel stats")
+                op.summary("Get channel-wide stats")
+                    .description("Return message totals and top chatters for the selected channel.")
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/tiers/{year}/{month}/{day}",
             get_with(handlers::get_channel_tiers_day, |op| {
-                op.description("Get daily chat tiers (top 200) for a channel")
+                op.summary("Get daily chat tiers").description(
+                    "Return the top 200 users for one UTC day with windowed rank and tier calculations.",
+                )
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/tiers/{year}/{month}",
             get_with(handlers::get_channel_tiers_month, |op| {
-                op.description("Get monthly chat tiers (top 200) for a channel")
+                op.summary("Get monthly chat tiers").description(
+                    "Return the top 200 users for one month with aggregated tier metrics.",
+                )
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/tiers/{year}",
             get_with(handlers::get_channel_tiers_year, |op| {
-                op.description("Get yearly chat tiers (top 200) for a channel")
+                op.summary("Get yearly chat tiers").description(
+                    "Return the top 200 users for one year with aggregated tier metrics.",
+                )
             }),
         )
         .api_route(
             "/sully/{channel}/{year}",
             get_with(handlers::get_sully_streams, |op| {
-                op.description("Fetch stream timestamps from SullyGnome for a channel/year")
+                op.summary("Fetch SullyGnome stream windows").description(
+                    "Return stream start and end windows from SullyGnome for one channel and year.",
+                )
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/random",
             get_with(handlers::random_channel_line, |op| {
-                op.description("Get a random line from the channel's logs")
+                op.summary("Get a random channel message")
+                    .description("Return one random message sampled from the selected channel.")
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/{user_id_type}/{user}/random",
             get_with(handlers::random_user_line, |op| {
-                op.description("Get a random line from the user's logs in a channel")
+                op.summary("Get a random user message").description(
+                    "Return one random message sampled from the selected user's history in the channel.",
+                )
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}",
             get_with(handlers::get_channel_logs, |op| {
-                op.description("Get channel logs. If the `to` and `from` query params are not given, redirect to latest available day")
+                op.summary("Get channel logs").description(
+                    "Fetch channel logs. If `from` and `to` are omitted, the endpoint redirects to the latest available day.",
+                )
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/{user_id_type}/{user}",
             get_with(handlers::get_user_logs, |op| {
-                op.description("Get user logs by name. If the `to` and `from` query params are not given, redirect to latest available month")
+                op.summary("Get logs for one user in one channel").description(
+                    "Fetch one user's logs inside a channel. If `from` and `to` are omitted, the endpoint redirects to the latest available month.",
+                )
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/{year}/{month}/{day}",
             get_with(handlers::get_channel_logs_by_date, |op| {
-                op.description("Get channel logs from the given day")
+                op.summary("Get channel logs for one day")
+                    .description("Fetch channel logs for the exact UTC day provided in the path.")
             }),
         )
         .api_route(
             "/{channel_id_type}/{channel}/{user_id_type}/{user}/{year}/{month}",
             get_with(handlers::get_user_logs_by_date, |op| {
-                op.description("Get user logs in a channel from the given month")
+                op.summary("Get one user's logs for one month").description(
+                    "Fetch one user's logs inside a channel for the exact UTC month provided in the path.",
+                )
             }),
         )
         .api_route("/optout", post(handlers::optout))
         .api_route("/capabilities", get(capabilities))
-        .route("/docs", Scalar::new("/openapi.json").axum_route())
+        .route("/docs", get(scalar_page))
         .route("/openapi.json", get(serve_openapi))
         .route("/assets/{*asset}", get(frontend::static_asset))
         .fallback(frontend::static_asset)
@@ -185,7 +251,11 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
                 .build(),
         )
         .route("/metrics", get(metrics))
-        .finish_api(&mut api)
+        .finish_api(&mut api);
+
+    enrich_openapi(&mut api);
+
+    let app = router
         .layer(Extension(Arc::new(api)))
         .with_state(app)
         .layer(cors)
@@ -235,6 +305,196 @@ async fn metrics() -> impl IntoApiResponse {
     let metrics = encoder.encode_to_string(&metric_families).unwrap();
     (no_cache_header(), metrics)
 }
+
+fn enrich_openapi(api: &mut OpenApi) {
+    let Some(paths) = &mut api.paths else {
+        return;
+    };
+
+    for path_item in paths.paths.values_mut() {
+        let ReferenceOr::Item(path_item) = path_item else {
+            continue;
+        };
+
+        if let Some(operation) = &mut path_item.get {
+            enrich_operation(operation);
+        }
+        if let Some(operation) = &mut path_item.post {
+            enrich_operation(operation);
+        }
+        if let Some(operation) = &mut path_item.delete {
+            enrich_operation(operation);
+        }
+        if let Some(operation) = &mut path_item.put {
+            enrich_operation(operation);
+        }
+        if let Some(operation) = &mut path_item.patch {
+            enrich_operation(operation);
+        }
+    }
+}
+
+fn enrich_operation(operation: &mut Operation) {
+    for parameter in &mut operation.parameters {
+        let Some(parameter) = parameter.as_item_mut() else {
+            continue;
+        };
+
+        {
+            let data = parameter.parameter_data_mut();
+            if data.description.is_none() {
+                data.description = parameter_description(&data.name).map(str::to_owned);
+            }
+            if let ParameterSchemaOrContent::Schema(schema) = &mut data.format {
+                enrich_parameter_schema(&data.name, schema);
+            }
+            if data.name == "exclude_bots" {
+                data.explode = Some(false);
+            }
+        }
+    }
+}
+
+fn parameter_description(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "channel_id_type" => {
+            "Use `channel` for a Twitch login or `channelid` for a Twitch user id."
+        }
+        "user_id_type" => "Use `user` for a Twitch login or `userid` for a Twitch user id.",
+        "channel" => "Twitch channel login or id, depending on the selected channel id type.",
+        "channelid" => {
+            "Twitch channel user id. Use this instead of `channel` when you already know the id."
+        }
+        "user" => "Twitch user login or id, depending on the selected user id type.",
+        "userid" => "Twitch user id. Use this instead of `user` when you already know the id.",
+        "year" => "UTC year.",
+        "month" => "UTC month number from 1 to 12.",
+        "day" => "UTC day of month.",
+        "from" => "RFC 3339 inclusive start timestamp.",
+        "to" => "RFC 3339 exclusive end timestamp.",
+        "q" => "Search text.",
+        "json" => "Return full JSON messages.",
+        "jsonBasic" => "Return compact JSON messages.",
+        "raw" => "Return raw IRC lines.",
+        "reverse" => "Return newest messages first.",
+        "ndjson" => "Return newline-delimited JSON.",
+        "limit" => "Maximum number of messages to return.",
+        "offset" => "Number of messages to skip.",
+        "mode" => "Tier mode: all messages, online stream windows, or offline windows.",
+        "exclude_bots" => "Bot logins excluded from tier tables.",
+        "X-Api-Key" => "Configured admin API key.",
+        _ => return None,
+    })
+}
+
+fn enrich_parameter_schema(name: &str, schema: &mut aide::openapi::SchemaObject) {
+    match name {
+        "channel_id_type" => set_schema(
+            schema,
+            json!({
+                "type": "string",
+                "enum": ["channel", "channelid"]
+            }),
+        ),
+        "user_id_type" => set_schema(
+            schema,
+            json!({
+                "type": "string",
+                "enum": ["user", "userid"]
+            }),
+        ),
+        "mode" => set_schema(
+            schema,
+            json!({
+                "type": "string",
+                "enum": ["all", "online", "offline"]
+            }),
+        ),
+        "exclude_bots" => set_schema(
+            schema,
+            json!({
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": schema::DEFAULT_EXCLUDED_BOTS
+                },
+                "uniqueItems": true
+            }),
+        ),
+        "json" | "jsonBasic" | "raw" | "reverse" | "ndjson" => {
+            let object = schema.json_schema.ensure_object();
+            object.insert("type".to_owned(), json!("boolean"));
+            object.remove("default");
+            object.remove("examples");
+        }
+        "month" => {
+            set_schema(
+                schema,
+                json!({
+                    "type": "integer",
+                    "enum": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                    "minimum": 1,
+                    "maximum": 12
+                }),
+            );
+        }
+        "limit" => {
+            let object = schema.json_schema.ensure_object();
+            object.insert("minimum".to_owned(), json!(1));
+        }
+        "offset" => {
+            let object = schema.json_schema.ensure_object();
+            object.insert("minimum".to_owned(), json!(0));
+        }
+        _ => clear_examples_and_defaults(schema),
+    }
+}
+
+fn clear_examples_and_defaults(schema: &mut aide::openapi::SchemaObject) {
+    let object = schema.json_schema.ensure_object();
+    object.remove("example");
+    object.remove("examples");
+    object.remove("default");
+}
+
+fn set_schema(schema: &mut aide::openapi::SchemaObject, value: serde_json::Value) {
+    schema.json_schema = value
+        .try_into()
+        .expect("OpenAPI parameter schema must be a JSON object");
+}
+
 async fn serve_openapi(Extension(api): Extension<Arc<OpenApi>>) -> impl IntoApiResponse {
     Json(api.as_ref()).into_response()
+}
+
+async fn scalar_page() -> Html<&'static str> {
+    static HTML: OnceLock<&'static str> = OnceLock::new();
+
+    Html(HTML.get_or_init(build_scalar_html))
+}
+
+fn build_scalar_html() -> &'static str {
+    let html = Scalar::new(SCALAR_SPEC_URL)
+        .with_title(SCALAR_PAGE_TITLE)
+        .html()
+        .replace(
+            "<style>",
+            &format!("{SCALAR_HEAD_INJECT}\n<style>"),
+        )
+        .replace(
+            "theme: 'purple',",
+            r#"theme: 'default',
+                    layout: 'modern',
+                    withDefaultFonts: false,
+                    operationTitleSource: 'summary',
+                    defaultHttpClient: { targetKey: 'shell', clientKey: 'curl' },
+                    searchHotKey: 'k',
+                    hideDarkModeToggle: false,
+                    metaData: {
+                      title: 'ChatTiers Rustlog API',
+                      description: 'Browse endpoints, inspect request and response shapes, and test the current rustlog instance.'
+                    },"#,
+        );
+
+    Box::leak(html.into_boxed_str())
 }
