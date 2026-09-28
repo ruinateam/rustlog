@@ -247,12 +247,12 @@ pub async fn read_random_user_line(
     }?;
 
     let mut cursor = db
-        .query(
+        .query(&format!(
             "WITH
             (SELECT timestamp FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} LIMIT 1 OFFSET ?)
             AS random_timestamp
             SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp = random_timestamp",
-        )
+        ))
         .bind(channel_id)
         .bind(user_id)
         .bind(offset)
@@ -289,12 +289,12 @@ pub async fn read_random_channel_line(
     }?;
 
     let mut cursor = db
-        .query(
+        .query(&format!(
             "WITH
             (SELECT timestamp FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} LIMIT 1 OFFSET ?)
             AS random_timestamp
             SELECT * FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp = random_timestamp",
-        )
+        ))
         .bind(channel_id)
         .bind(offset)
         .bind(channel_id)
