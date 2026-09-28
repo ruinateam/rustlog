@@ -1,0 +1,2757 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ChatTiers Rustlog API",
+    "summary": "Query chat logs, search history, inspect stats, and manage live logging.",
+    "description": "Use `channel` / `user` when you want login-based routes and `channelid` / `userid` when you already have Twitch ids.\n\nFor log endpoints, append `?json`, `?jsonBasic`, `?raw`, or `?ndjson` to switch the response format.",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current rustlog instance"
+    }
+  ],
+  "paths": {
+    "/admin/channels": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Join channels for live logging",
+        "description": "Join the specified channels",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Api-Key",
+            "description": "Configured admin API key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "no content"
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Leave channels and stop live logging",
+        "description": "Leave the specified channels",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Api-Key",
+            "description": "Configured admin API key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "no content"
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/admin/badges/{channel_id}": {
+      "get": {
+        "summary": "Get Twitch chat badge metadata",
+        "description": "Return global and channel-specific Twitch badge images for rendering stored chat messages.",
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/admin/firehose": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Stream live accepted chat events",
+        "description": "Open a WebSocket feed after authenticating with `X-Api-Key`. Messages are live, at-least-once deliveries accepted by the writer queue; reconnect and replay through the HTTP logs API after a `1013` close.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "$ref": "#/components/schemas/FirehoseFormat"
+            },
+            "style": "form"
+          },
+          {
+            "in": "header",
+            "name": "X-Api-Key",
+            "description": "Configured admin API key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "websocket upgrade",
+            "headers": {
+              "connection": {
+                "style": "simple",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "upgrade"
+                  ],
+                  "const": "upgrade",
+                  "example": "upgrade"
+                }
+              },
+              "upgrade": {
+                "style": "simple",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "websocket"
+                  ],
+                  "const": "websocket",
+                  "example": "websocket"
+                }
+              },
+              "sec-websocket-key": {
+                "style": "simple",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "sec-websocket-protocol": {
+                "style": "simple",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels": {
+      "get": {
+        "summary": "List logged channels",
+        "description": "Return the channel logins and Twitch ids currently configured for live logging."
+      }
+    },
+    "/list": {
+      "get": {
+        "summary": "List available log buckets",
+        "description": "Show which years, months, or days exist. Without query parameters, returns buckets for all configured channels. With `channel` or `channelid`, returns buckets for that channel, optionally narrowed to a specific user.",
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/namehistory/{user_id}": {
+      "get": {
+        "summary": "Get historical logins for a user id",
+        "description": "Return previous usernames seen for the provided Twitch user id together with their first and last timestamps.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PreviousName"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/{user_id_type}/{user}/search": {
+      "get": {
+        "summary": "Search a user's messages in a channel",
+        "description": "Run a text search over one user's messages inside one channel.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "user_id_type",
+            "description": "Use `user` for a Twitch login or `userid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "userid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "description": "Twitch user login or id, depending on the selected user id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "description": "Search text.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "json",
+            "description": "Return the full JSON response shape.",
+            "schema": {
+              "description": "Return the full JSON response shape.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "jsonBasic",
+            "description": "Return compact JSON with basic message fields.",
+            "schema": {
+              "description": "Return compact JSON with basic message fields.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "raw",
+            "description": "Return raw IRC lines.",
+            "schema": {
+              "description": "Return raw IRC lines.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "reverse",
+            "description": "Reverse log order.",
+            "schema": {
+              "description": "Reverse log order.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "ndjson",
+            "description": "Return newline-delimited JSON.",
+            "schema": {
+              "description": "Return newline-delimited JSON.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of messages to return.",
+            "schema": {
+              "description": "Maximum number of messages to return.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 1,
+              "examples": [
+                100
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of messages to skip before returning results.",
+            "schema": {
+              "description": "Number of messages to skip before returning results.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0,
+              "examples": [
+                0
+              ]
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logs response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonLogsResponse"
+                }
+              },
+              "text/plain; charset=utf-8": {}
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/{user_id_type}/{user}/stats": {
+      "get": {
+        "summary": "Get per-user message stats",
+        "description": "Return message totals and related aggregates for one user in one channel.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "user_id_type",
+            "description": "Use `user` for a Twitch login or `userid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "userid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "description": "Twitch user login or id, depending on the selected user id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "description": "RFC 3339 start date",
+            "schema": {
+              "description": "RFC 3339 start date",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "description": "RFC 3339 end date",
+            "schema": {
+              "description": "RFC 3339 end date",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLogsStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/stats": {
+      "get": {
+        "summary": "Get channel-wide stats",
+        "description": "Return message totals and top chatters for the selected channel.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "description": "RFC 3339 start date",
+            "schema": {
+              "description": "RFC 3339 start date",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "description": "RFC 3339 end date",
+            "schema": {
+              "description": "RFC 3339 end date",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelLogsStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/tiers/{year}/{month}/{day}": {
+      "get": {
+        "summary": "Get daily chat tiers",
+        "description": "Return up to 500 users for one Europe/Moscow calendar day with deterministic windowed ranks and tier calculations.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "year",
+            "description": "UTC year.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "month",
+            "description": "UTC month number from 1 to 12.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+              ],
+              "minimum": 1,
+              "maximum": 12
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "day",
+            "description": "UTC day of month.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "description": "Tier calculation mode: all messages, messages sent while the stream was online, or messages sent while the stream was offline.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "online",
+                "offline"
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "exclude_bots",
+            "description": "Bot logins excluded from tier tables.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "twirapp",
+                  "streamelements",
+                  "nightbot",
+                  "moobot",
+                  "mejkizbot",
+                  "supibot",
+                  "potatbotat",
+                  "fossabot"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "explode": false,
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/tiers/{year}/{month}": {
+      "get": {
+        "summary": "Get monthly chat tiers",
+        "description": "Return up to 500 users for one Europe/Moscow calendar month with deterministic aggregated tier metrics.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "year",
+            "description": "UTC year.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "month",
+            "description": "UTC month number from 1 to 12.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+              ],
+              "minimum": 1,
+              "maximum": 12
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "description": "Tier calculation mode: all messages, messages sent while the stream was online, or messages sent while the stream was offline.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "online",
+                "offline"
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "exclude_bots",
+            "description": "Bot logins excluded from tier tables.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "twirapp",
+                  "streamelements",
+                  "nightbot",
+                  "moobot",
+                  "mejkizbot",
+                  "supibot",
+                  "potatbotat",
+                  "fossabot"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "explode": false,
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/tiers/{year}": {
+      "get": {
+        "summary": "Get yearly chat tiers",
+        "description": "Return up to 500 users for one Europe/Moscow calendar year with deterministic aggregated tier metrics.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "year",
+            "description": "UTC year.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "description": "Tier calculation mode: all messages, messages sent while the stream was online, or messages sent while the stream was offline.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "online",
+                "offline"
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "exclude_bots",
+            "description": "Bot logins excluded from tier tables.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "twirapp",
+                  "streamelements",
+                  "nightbot",
+                  "moobot",
+                  "mejkizbot",
+                  "supibot",
+                  "potatbotat",
+                  "fossabot"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "explode": false,
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/sully/{channel}/{year}": {
+      "get": {
+        "summary": "Fetch SullyGnome stream windows",
+        "description": "Return stream start and end windows from SullyGnome for one channel and year.",
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/random": {
+      "get": {
+        "summary": "Get a random channel message",
+        "description": "Return one random message sampled from the selected channel.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "json",
+            "description": "Return the full JSON response shape.",
+            "schema": {
+              "description": "Return the full JSON response shape.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "jsonBasic",
+            "description": "Return compact JSON with basic message fields.",
+            "schema": {
+              "description": "Return compact JSON with basic message fields.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "raw",
+            "description": "Return raw IRC lines.",
+            "schema": {
+              "description": "Return raw IRC lines.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "reverse",
+            "description": "Reverse log order.",
+            "schema": {
+              "description": "Reverse log order.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "ndjson",
+            "description": "Return newline-delimited JSON.",
+            "schema": {
+              "description": "Return newline-delimited JSON.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of messages to return.",
+            "schema": {
+              "description": "Maximum number of messages to return.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 1,
+              "examples": [
+                100
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of messages to skip before returning results.",
+            "schema": {
+              "description": "Number of messages to skip before returning results.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0,
+              "examples": [
+                0
+              ]
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/{user_id_type}/{user}/random": {
+      "get": {
+        "summary": "Get a random user message",
+        "description": "Return one random message sampled from the selected user's history in the channel.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "user_id_type",
+            "description": "Use `user` for a Twitch login or `userid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "userid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "description": "Twitch user login or id, depending on the selected user id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "json",
+            "description": "Return the full JSON response shape.",
+            "schema": {
+              "description": "Return the full JSON response shape.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "jsonBasic",
+            "description": "Return compact JSON with basic message fields.",
+            "schema": {
+              "description": "Return compact JSON with basic message fields.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "raw",
+            "description": "Return raw IRC lines.",
+            "schema": {
+              "description": "Return raw IRC lines.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "reverse",
+            "description": "Reverse log order.",
+            "schema": {
+              "description": "Reverse log order.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "ndjson",
+            "description": "Return newline-delimited JSON.",
+            "schema": {
+              "description": "Return newline-delimited JSON.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of messages to return.",
+            "schema": {
+              "description": "Maximum number of messages to return.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 1,
+              "examples": [
+                100
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of messages to skip before returning results.",
+            "schema": {
+              "description": "Number of messages to skip before returning results.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0,
+              "examples": [
+                0
+              ]
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}": {
+      "get": {
+        "summary": "Get channel logs",
+        "description": "Fetch channel logs. If `from` and `to` are omitted, the endpoint redirects to the latest available day.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "description": "RFC 3339 start date",
+            "schema": {
+              "description": "RFC 3339 start date",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "description": "RFC 3339 end date",
+            "schema": {
+              "description": "RFC 3339 end date",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "json",
+            "description": "Return the full JSON response shape.",
+            "schema": {
+              "description": "Return the full JSON response shape.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "jsonBasic",
+            "description": "Return compact JSON with basic message fields.",
+            "schema": {
+              "description": "Return compact JSON with basic message fields.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "raw",
+            "description": "Return raw IRC lines.",
+            "schema": {
+              "description": "Return raw IRC lines.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "reverse",
+            "description": "Reverse log order.",
+            "schema": {
+              "description": "Reverse log order.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "ndjson",
+            "description": "Return newline-delimited JSON.",
+            "schema": {
+              "description": "Return newline-delimited JSON.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of messages to return.",
+            "schema": {
+              "description": "Maximum number of messages to return.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 1,
+              "examples": [
+                100
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of messages to skip before returning results.",
+            "schema": {
+              "description": "Number of messages to skip before returning results.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0,
+              "examples": [
+                0
+              ]
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/{user_id_type}/{user}": {
+      "get": {
+        "summary": "Get logs for one user in one channel",
+        "description": "Fetch one user's logs inside a channel. If `from` and `to` are omitted, the endpoint redirects to the latest available month.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "user_id_type",
+            "description": "Use `user` for a Twitch login or `userid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "userid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "description": "Twitch user login or id, depending on the selected user id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "description": "RFC 3339 start date",
+            "schema": {
+              "description": "RFC 3339 start date",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "description": "RFC 3339 end date",
+            "schema": {
+              "description": "RFC 3339 end date",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "json",
+            "description": "Return the full JSON response shape.",
+            "schema": {
+              "description": "Return the full JSON response shape.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "jsonBasic",
+            "description": "Return compact JSON with basic message fields.",
+            "schema": {
+              "description": "Return compact JSON with basic message fields.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "raw",
+            "description": "Return raw IRC lines.",
+            "schema": {
+              "description": "Return raw IRC lines.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "reverse",
+            "description": "Reverse log order.",
+            "schema": {
+              "description": "Reverse log order.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "ndjson",
+            "description": "Return newline-delimited JSON.",
+            "schema": {
+              "description": "Return newline-delimited JSON.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of messages to return.",
+            "schema": {
+              "description": "Maximum number of messages to return.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 1,
+              "examples": [
+                100
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of messages to skip before returning results.",
+            "schema": {
+              "description": "Number of messages to skip before returning results.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0,
+              "examples": [
+                0
+              ]
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/{year}/{month}/{day}": {
+      "get": {
+        "summary": "Get channel logs for one day",
+        "description": "Fetch channel logs for the exact UTC day provided in the path.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "year",
+            "description": "UTC year.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "month",
+            "description": "UTC month number from 1 to 12.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+              ],
+              "minimum": 1,
+              "maximum": 12
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "day",
+            "description": "UTC day of month.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "json",
+            "description": "Return the full JSON response shape.",
+            "schema": {
+              "description": "Return the full JSON response shape.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "jsonBasic",
+            "description": "Return compact JSON with basic message fields.",
+            "schema": {
+              "description": "Return compact JSON with basic message fields.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "raw",
+            "description": "Return raw IRC lines.",
+            "schema": {
+              "description": "Return raw IRC lines.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "reverse",
+            "description": "Reverse log order.",
+            "schema": {
+              "description": "Reverse log order.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "ndjson",
+            "description": "Return newline-delimited JSON.",
+            "schema": {
+              "description": "Return newline-delimited JSON.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of messages to return.",
+            "schema": {
+              "description": "Maximum number of messages to return.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 1,
+              "examples": [
+                100
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of messages to skip before returning results.",
+            "schema": {
+              "description": "Number of messages to skip before returning results.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0,
+              "examples": [
+                0
+              ]
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/{channel_id_type}/{channel}/{user_id_type}/{user}/{year}/{month}": {
+      "get": {
+        "summary": "Get one user's logs for one month",
+        "description": "Fetch one user's logs inside a channel for the exact UTC month provided in the path.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id_type",
+            "description": "Use `channel` for a Twitch login or `channelid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "channel",
+                "channelid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channel",
+            "description": "Twitch channel login or id, depending on the selected channel id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "user_id_type",
+            "description": "Use `user` for a Twitch login or `userid` for a Twitch user id.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "userid"
+              ]
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "description": "Twitch user login or id, depending on the selected user id type.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "year",
+            "description": "UTC year.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "month",
+            "description": "UTC month number from 1 to 12.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+              ],
+              "minimum": 1,
+              "maximum": 12
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "json",
+            "description": "Return the full JSON response shape.",
+            "schema": {
+              "description": "Return the full JSON response shape.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "jsonBasic",
+            "description": "Return compact JSON with basic message fields.",
+            "schema": {
+              "description": "Return compact JSON with basic message fields.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "raw",
+            "description": "Return raw IRC lines.",
+            "schema": {
+              "description": "Return raw IRC lines.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "reverse",
+            "description": "Reverse log order.",
+            "schema": {
+              "description": "Reverse log order.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "ndjson",
+            "description": "Return newline-delimited JSON.",
+            "schema": {
+              "description": "Return newline-delimited JSON.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of messages to return.",
+            "schema": {
+              "description": "Maximum number of messages to return.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 1,
+              "examples": [
+                100
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of messages to skip before returning results.",
+            "schema": {
+              "description": "Number of messages to skip before returning results.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0,
+              "examples": [
+                0
+              ]
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/optout": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/capabilities": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AvailableLogsParams": {
+        "type": "object",
+        "allOf": [
+          {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "channel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channel"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "channelid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channelid"
+                ]
+              }
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "user": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "user"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "userid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "userid"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "UserNameHistoryParam": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "PreviousName": {
+        "type": "object",
+        "properties": {
+          "user_login": {
+            "type": "string"
+          },
+          "last_timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "first_timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "user_login",
+          "last_timestamp",
+          "first_timestamp"
+        ]
+      },
+      "UserLogPathParams": {
+        "type": "object",
+        "properties": {
+          "channel_id_type": {
+            "$ref": "#/components/schemas/ChannelIdType"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "user_id_type": {
+            "$ref": "#/components/schemas/UserIdType"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id_type",
+          "channel",
+          "user_id_type",
+          "user"
+        ]
+      },
+      "ChannelIdType": {
+        "type": "string",
+        "enum": [
+          "channel",
+          "channelid"
+        ]
+      },
+      "UserIdType": {
+        "type": "string",
+        "enum": [
+          "user",
+          "userid"
+        ]
+      },
+      "SearchParams": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "LogsParams": {
+        "type": "object",
+        "properties": {
+          "json": {
+            "description": "Return the full JSON response shape.",
+            "type": "boolean",
+            "default": false
+          },
+          "jsonBasic": {
+            "description": "Return compact JSON with basic message fields.",
+            "type": "boolean",
+            "default": false
+          },
+          "raw": {
+            "description": "Return raw IRC lines.",
+            "type": "boolean",
+            "default": false
+          },
+          "reverse": {
+            "description": "Reverse log order.",
+            "type": "boolean",
+            "default": false
+          },
+          "ndjson": {
+            "description": "Return newline-delimited JSON.",
+            "type": "boolean",
+            "default": false
+          },
+          "limit": {
+            "description": "Maximum number of messages to return.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 1,
+            "examples": [
+              100
+            ]
+          },
+          "offset": {
+            "description": "Number of messages to skip before returning results.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0,
+            "examples": [
+              0
+            ]
+          }
+        }
+      },
+      "JsonLogsResponse": {
+        "description": "Used for schema only, actual serialization is manual",
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FullMessage"
+            }
+          }
+        },
+        "required": [
+          "messages"
+        ]
+      },
+      "FullMessage": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "integer",
+            "format": "int8",
+            "minimum": -128,
+            "maximum": 127
+          },
+          "text": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "username": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "raw": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "displayName",
+          "timestamp",
+          "id",
+          "tags",
+          "username",
+          "channel",
+          "raw",
+          "type"
+        ]
+      },
+      "LogRangeParams": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "description": "RFC 3339 start date",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "to": {
+            "description": "RFC 3339 end date",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "UserLogsStats": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "userLogin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageCount": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "userId",
+          "messageCount"
+        ]
+      },
+      "LogsPathChannel": {
+        "type": "object",
+        "properties": {
+          "channel_id_type": {
+            "$ref": "#/components/schemas/ChannelIdType"
+          },
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id_type",
+          "channel"
+        ]
+      },
+      "ChannelLogsStats": {
+        "type": "object",
+        "properties": {
+          "messageCount": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "topChatters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserLogsStats"
+            }
+          }
+        },
+        "required": [
+          "messageCount",
+          "topChatters"
+        ]
+      },
+      "ChannelDayPath": {
+        "type": "object",
+        "properties": {
+          "channel_id_type": {
+            "$ref": "#/components/schemas/ChannelIdType"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "year": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id_type",
+          "channel",
+          "year",
+          "month",
+          "day"
+        ]
+      },
+      "TierModeQuery": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "Tier calculation mode: all messages, messages sent while the stream was online, or messages sent while the stream was offline.",
+            "default": "all",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TierMode"
+              }
+            ]
+          },
+          "exclude_bots": {
+            "description": "Bot logins excluded from tier tables.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "twirapp",
+                "streamelements",
+                "nightbot",
+                "moobot",
+                "mejkizbot",
+                "supibot",
+                "potatbotat",
+                "fossabot"
+              ]
+            },
+            "uniqueItems": true,
+            "default": [
+              "twirapp",
+              "streamelements",
+              "nightbot",
+              "moobot",
+              "mejkizbot",
+              "supibot",
+              "potatbotat",
+              "fossabot"
+            ]
+          }
+        }
+      },
+      "TierMode": {
+        "type": "string",
+        "enum": [
+          "all",
+          "online",
+          "offline"
+        ]
+      },
+      "ChannelMonthPath": {
+        "type": "object",
+        "properties": {
+          "channel_id_type": {
+            "$ref": "#/components/schemas/ChannelIdType"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "year": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id_type",
+          "channel",
+          "year",
+          "month"
+        ]
+      },
+      "ChannelYearPath": {
+        "type": "object",
+        "properties": {
+          "channel_id_type": {
+            "$ref": "#/components/schemas/ChannelIdType"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "year": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id_type",
+          "channel",
+          "year"
+        ]
+      },
+      "ChannelLogsByDatePath": {
+        "type": "object",
+        "properties": {
+          "channel_id_type": {
+            "$ref": "#/components/schemas/ChannelIdType"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "year": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id_type",
+          "channel",
+          "year",
+          "month",
+          "day"
+        ]
+      },
+      "UserLogsDatePath": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "year",
+          "month"
+        ]
+      }
+    }
+  }
+}
