@@ -131,38 +131,6 @@
         }
       }
     },
-    "/admin/badges/{channel_id}": {
-      "get": {
-        "summary": "Get Twitch chat badge metadata",
-        "description": "Return global and channel-specific Twitch badge images for rendering stored chat messages.",
-        "responses": {
-          "400": {
-            "description": "The request is invalid",
-            "content": {
-              "text/plain": {}
-            }
-          },
-          "403": {
-            "description": "Channel or user has opted out",
-            "content": {
-              "text/plain": {}
-            }
-          },
-          "404": {
-            "description": "The requested data was not found",
-            "content": {
-              "text/plain": {}
-            }
-          },
-          "500": {
-            "description": "An internal server error occured",
-            "content": {
-              "text/plain": {}
-            }
-          }
-        }
-      }
-    },
     "/admin/firehose": {
       "get": {
         "tags": [
@@ -269,6 +237,38 @@
       "get": {
         "summary": "List available log buckets",
         "description": "Show which years, months, or days exist. Without query parameters, returns buckets for all configured channels. With `channel` or `channelid`, returns buckets for that channel, optionally narrowed to a specific user.",
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
+      }
+    },
+    "/badges/{channel_id}": {
+      "get": {
+        "summary": "Get Twitch chat badge metadata",
+        "description": "Return global and channel-specific Twitch badge images for rendering stored chat messages. Only available for logged channels.",
         "responses": {
           "400": {
             "description": "The request is invalid",

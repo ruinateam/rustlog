@@ -11,7 +11,10 @@
 
 use super::service;
 use crate::{
-    app::{cache::UsersCache, App},
+    app::{
+        cache::{BadgesCache, UsersCache},
+        App,
+    },
     config::Config,
     db::{setup_db, writer::FlushBuffer},
     state::OperationalState,
@@ -102,6 +105,7 @@ impl TestServer {
             // never reach the network.
             token: Arc::new(RwLock::new(None)),
             users: UsersCache::default(),
+            badges: BadgesCache::default(),
             optout_codes: Arc::default(),
             state: OperationalState::load(db.clone()).await.unwrap(),
             db,
@@ -283,6 +287,8 @@ async fn legacy_logs() {
         Case::get("channel_random", "/channelid/11111/random").without_body(),
         Case::get("user_random", "/channelid/11111/userid/22222/random").without_body(),
         Case::get("namehistory", "/namehistory/22222"),
+        Case::get("badges", "/badges/11111"),
+        Case::get("badges_unlogged_channel", "/badges/99999"),
     ])
     .await;
 }
@@ -326,18 +332,12 @@ async fn legacy_admin() {
         Case::get("admin_channels_get_no_key", "/admin/channels"),
         Case::get("admin_channels_get", "/admin/channels").headers(ADMIN),
         Case::get("admin_channels_trailing_slash", "/admin/channels/"),
-        Case::get("admin_badges_no_key", "/admin/badges/11111"),
-        Case::get("admin_badges", "/admin/badges/11111").headers(ADMIN),
-        Case::get("admin_badges_post_no_key", "/admin/badges/11111").method(Method::POST),
-        Case::get("admin_badges_post", "/admin/badges/11111")
-            .method(Method::POST)
-            .headers(ADMIN),
+        Case::get("admin_badges_removed", "/admin/badges/11111").headers(ADMIN),
         Case::get("admin_firehose_no_key", "/admin/firehose"),
         Case::get("admin_firehose_no_upgrade", "/admin/firehose").headers(ADMIN),
         Case::get("admin_firehose_patch_no_key", "/admin/firehose").method(Method::PATCH),
         Case::get("admin_unknown", "/admin/unknown"),
         Case::get("admin_unknown_with_key", "/admin/unknown").headers(ADMIN),
-        Case::get("root_badges", "/badges/11111"),
     ])
     .await;
 }

@@ -48,7 +48,7 @@ use twitch_api::{
 };
 use twitch_irc::login::StaticLoginCredentials;
 
-use crate::app::cache::UsersCache;
+use crate::app::cache::{BadgesCache, UsersCache};
 
 const SHUTDOWN_TIMEOUT_SECONDS: u64 = 8;
 const TOKEN_RETRY_INTERVAL_SECONDS: u64 = 5;
@@ -206,6 +206,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
         helix_client,
         token: token.clone(),
         users: UsersCache::default(),
+        badges: BadgesCache::default(),
         config: config.clone(),
         db,
         state,

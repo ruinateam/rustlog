@@ -1,8 +1,0 @@
----
-source: src/web/tests.rs
-expression: rendered
----
-POST /admin/badges/11111
-status: 405 Method Not Allowed
-x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
----

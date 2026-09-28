@@ -1,8 +1,10 @@
 use dashmap::DashMap;
 use std::{sync::Arc, time::Instant};
 use tracing::trace;
+use twitch_api::helix::chat::BadgeSet;
 
 const EXPIRY_INTERVAL: u64 = 7200;
+const BADGES_EXPIRY_INTERVAL: u64 = 3600;
 
 // Banned users are stored as None
 #[derive(Clone, Default)]
@@ -58,6 +60,44 @@ impl UsersCache {
             }
         } else {
             None
+        }
+    }
+}
+
+/// Twitch chat badge sets keyed by channel id, `None` for the global ones.
+///
+/// Badges are served publicly, so they are cached to keep requests from
+/// reaching Helix and eating into the shared app token rate limit.
+#[derive(Clone, Default)]
+pub struct BadgesCache {
+    sets: Arc<DashMap<Option<String>, CachedBadges>>,
+}
+
+struct CachedBadges {
+    inserted_at: Instant,
+    sets: Vec<BadgeSet>,
+}
+
+impl BadgesCache {
+    pub fn insert(&self, channel_id: Option<&str>, sets: Vec<BadgeSet>) {
+        let cached = CachedBadges {
+            inserted_at: Instant::now(),
+            sets,
+        };
+        self.sets.insert(channel_id.map(str::to_owned), cached);
+    }
+
+    pub fn get(&self, channel_id: Option<&str>) -> Option<Vec<BadgeSet>> {
+        let key = channel_id.map(str::to_owned);
+        let entry = self.sets.get(&key)?;
+
+        if entry.inserted_at.elapsed().as_secs() > BADGES_EXPIRY_INTERVAL {
+            drop(entry);
+            trace!("Removing badges of {key:?} from cache");
+            self.sets.remove(&key);
+            None
+        } else {
+            Some(entry.sets.clone())
         }
     }
 }

@@ -62,6 +62,11 @@ pub async fn get_chat_badges(
     Path(channel_id): Path<String>,
     app: State<App>,
 ) -> Result<impl IntoApiResponse> {
+    // Only logged channels, so that arbitrary ids cannot drive Helix requests.
+    if !app.state.is_channel_enabled(&channel_id) {
+        return Err(Error::NotFound);
+    }
+
     let (global, channel) = app.get_chat_badges(&channel_id).await?;
     let badges = global
         .into_iter()

@@ -160,14 +160,6 @@ pub fn api() -> Api {
             }),
         )
         .api_route(
-            "/badges/{channel_id}",
-            get_with(handlers::get_chat_badges, |op| {
-                op.summary("Get Twitch chat badge metadata").description(
-                    "Return global and channel-specific Twitch badge images for rendering stored chat messages.",
-                )
-            }),
-        )
-        .api_route(
             "/firehose",
             get_with(firehose::firehose, |mut op| {
                 admin::admin_auth_doc(&mut op);
@@ -225,6 +217,14 @@ pub fn api() -> Api {
             get_with(handlers::list_available_logs, |op| {
                 op.summary("List available log buckets").description(
                     "Show which years, months, or days exist. Without query parameters, returns buckets for all configured channels. With `channel` or `channelid`, returns buckets for that channel, optionally narrowed to a specific user.",
+                )
+            }),
+        )
+        .api_route(
+            "/badges/{channel_id}",
+            get_with(handlers::get_chat_badges, |op| {
+                op.summary("Get Twitch chat badge metadata").description(
+                    "Return global and channel-specific Twitch badge images for rendering stored chat messages. Only available for logged channels.",
                 )
             }),
         )

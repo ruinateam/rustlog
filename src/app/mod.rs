@@ -1,6 +1,6 @@
 pub mod cache;
 
-use self::cache::UsersCache;
+use self::cache::{BadgesCache, UsersCache};
 use crate::{
     config::Config,
     db::{delete_user_logs, writer::FlushBuffer},
@@ -27,6 +27,7 @@ pub struct App {
     pub helix_client: HelixClient<'static, reqwest::Client>,
     pub token: Arc<RwLock<Option<AppAccessToken>>>,
     pub users: UsersCache,
+    pub badges: BadgesCache,
     pub optout_codes: Arc<DashSet<String>>,
     pub db: Arc<clickhouse::Client>,
     pub config: Arc<Config>,
@@ -186,20 +187,36 @@ impl App {
         &self,
         channel_id: &str,
     ) -> Result<(Vec<BadgeSet>, Vec<BadgeSet>)> {
-        let token = self.token().await?;
-        let global = self
-            .helix_client
-            .req_get(GetGlobalChatBadgesRequest::new(), &token)
-            .await?
-            .data;
-        let channel = self
-            .helix_client
-            .req_get(
-                GetChannelChatBadgesRequest::broadcaster_id(channel_id),
-                &token,
-            )
-            .await?
-            .data;
+        let global = match self.badges.get(None) {
+            Some(global) => global,
+            None => {
+                let token = self.token().await?;
+                let global = self
+                    .helix_client
+                    .req_get(GetGlobalChatBadgesRequest::new(), &token)
+                    .await?
+                    .data;
+                self.badges.insert(None, global.clone());
+                global
+            }
+        };
+
+        let channel = match self.badges.get(Some(channel_id)) {
+            Some(channel) => channel,
+            None => {
+                let token = self.token().await?;
+                let channel = self
+                    .helix_client
+                    .req_get(
+                        GetChannelChatBadgesRequest::broadcaster_id(channel_id),
+                        &token,
+                    )
+                    .await?
+                    .data;
+                self.badges.insert(Some(channel_id), channel.clone());
+                channel
+            }
+        };
 
         Ok((global, channel))
     }
