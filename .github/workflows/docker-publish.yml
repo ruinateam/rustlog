@@ -49,9 +49,9 @@ jobs:
           yarn build
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.94
+        uses: dtolnay/rust-toolchain@1.98
         with:
-          components: rustfmt
+          components: rustfmt, clippy
 
       - name: Check Rust formatting
         run: cargo fmt -- --check

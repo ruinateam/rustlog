@@ -44,34 +44,32 @@ Docker поднимает ClickHouse `26.5.6.64` с healthcheck-ом, монти
 
 Требования для сборки:
 
-- Rust 1.94+
-- Node.js 18+ и yarn (`corepack enable`).
+- [rustup](https://rustup.rs): нужная версия Rust ставится автоматически из `rust-toolchain.toml`;
+- [just](https://just.systems) (`cargo install --locked just`);
+- Docker с Compose, чтобы поднимать локальный ClickHouse;
+- Node.js 18+ и yarn (`corepack enable`), только для сборки веб-интерфейса.
 
-Веб-интерфейс встраивается в исполняемый файл только с feature `embed-frontend`, и тогда его нужно собрать до `cargo build`:
+Все частые команды собраны в `Justfile`, их список выводит `just`:
 
 ```bash
-# Перейдите в саб-модуль веб-интерфейса, установите зависимости и соберите сборку 
-cd web
-yarn install
-yarn build
+# Поднять ClickHouse и запустить бэкенд с config.json
+just run
 
-# Перейдите обратно и соберите проект целиком
-cd ..
-cargo build --release --features embed-frontend
+# Собрать релизный бинарник со встроенным веб-интерфейсом
+just build
 ./target/release/rustlog --config config.json
 ```
 
-Без `embed-frontend` бэкенд собирается без Node.js, а вместо веб-интерфейса отдаётся страница-заглушка со ссылками на документацию API.
+Веб-интерфейс встраивается в исполняемый файл только с feature `embed-frontend`. Без неё бэкенд собирается без Node.js, а вместо веб-интерфейса отдаётся страница-заглушка со ссылками на документацию API.
 
-Если вы планируете отправлять изменения, запустите следующие проверки:
+Если вы планируете отправлять изменения, запустите те же проверки, что и CI:
 
 ```bash
-# Форматирование и тесты бэкенда
-cargo fmt -- --check
-cargo test
+# Форматирование, clippy и тесты бэкенда
+just check
 
-# Проверка типов и сборки веб-интерфейса
-cd web && yarn typecheck && yarn build
+# Проверка типов веб-интерфейса
+just web-check
 ```
 
 ## Публикация Docker-образа
