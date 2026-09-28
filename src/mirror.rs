@@ -1,18 +1,320 @@
-use crate::db::schema::{MessageFlags, MessageType, StructuredMessage, MESSAGES_STRUCTURED_TABLE};
+use crate::{
+    db::schema::{MessageFlags, MessageType, StructuredMessage, MESSAGES_STRUCTURED_TABLE},
+    state::OperationalState,
+};
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use clickhouse::Client;
+use clickhouse::{Client, Row};
+use dashmap::DashSet;
 use futures::{stream, StreamExt};
-use reqwest::Client as HttpClient;
+use rand::Rng;
+use reqwest::{Client as HttpClient, StatusCode};
 use serde::Deserialize;
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
-use std::time::Instant;
-use tracing::{info, warn};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, Mutex};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
-const DEFAULT_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MIN_VALID_TS_MS: i64 = 1_577_836_800_000; // 2020-01-01T00:00:00Z in ms
+const FETCH_RETRIES: usize = 8;
+const CHANNEL_BUF_SIZE: usize = 100_000;
+const DEFAULT_RPS: f64 = 2.0;
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(120);
+const MIN_RETRY_AFTER: Duration = Duration::from_secs(1);
+
+#[derive(Clone, Copy, Debug)]
+pub struct RunDaysOptions {
+    pub http_concurrency: usize,
+    pub insert_max_rows: u64,
+}
+
+impl RunDaysOptions {
+    pub fn new(batch: usize, http_concurrency: usize) -> Self {
+        Self {
+            http_concurrency: http_concurrency.max(1),
+            insert_max_rows: (batch as u64).max(1),
+        }
+    }
+}
+
+/// Shared rate-limited HTTP client pool for mirror / fill-missing.
+#[derive(Clone)]
+pub struct MirrorHttp {
+    inner: Arc<MirrorHttpInner>,
+}
+
+struct MirrorHttpInner {
+    slots: Vec<MirrorSlot>,
+    rr: AtomicUsize,
+}
+
+struct MirrorSlot {
+    client: HttpClient,
+    limiter: SlotLimiter,
+    label: String,
+}
+
+struct SlotLimiter {
+    min_interval: Duration,
+    next_free: Mutex<Instant>,
+}
+
+impl SlotLimiter {
+    fn new(rps: f64) -> Self {
+        let rps = if rps.is_finite() && rps > 0.0 {
+            rps
+        } else {
+            DEFAULT_RPS
+        };
+        Self {
+            min_interval: Duration::from_secs_f64(1.0 / rps),
+            next_free: Mutex::new(Instant::now()),
+        }
+    }
+
+    async fn acquire(&self) {
+        let wait = {
+            let mut next = self.next_free.lock().await;
+            let now = Instant::now();
+            if *next <= now {
+                *next = now + self.min_interval;
+                Duration::ZERO
+            } else {
+                let wait = *next - now;
+                *next += self.min_interval;
+                wait
+            }
+        };
+        if !wait.is_zero() {
+            tokio::time::sleep(wait).await;
+        }
+    }
+
+    async fn penalize(&self, delay: Duration) {
+        let mut next = self.next_free.lock().await;
+        let candidate = Instant::now() + delay;
+        if candidate > *next {
+            *next = candidate;
+        }
+    }
+}
+
+impl MirrorHttp {
+    pub fn new(
+        proxies: &[String],
+        rps: f64,
+        user_agent: &'static str,
+        pool_max_idle_per_host: usize,
+    ) -> anyhow::Result<Self> {
+        let rps = if rps.is_finite() && rps > 0.0 {
+            rps
+        } else {
+            DEFAULT_RPS
+        };
+        let proxies: Vec<String> = proxies
+            .iter()
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect();
+
+        let mut slots = Vec::new();
+        if proxies.is_empty() {
+            slots.push(build_slot(
+                None,
+                "direct",
+                rps,
+                user_agent,
+                pool_max_idle_per_host,
+            )?);
+        } else {
+            for proxy in &proxies {
+                let label = proxy_label(proxy);
+                slots.push(build_slot(
+                    Some(proxy.as_str()),
+                    &label,
+                    rps,
+                    user_agent,
+                    pool_max_idle_per_host,
+                )?);
+            }
+        }
+
+        info!(
+            "mirror http pool: slots={} rps_per_slot={:.2} approx_total_rps={:.2}",
+            slots.len(),
+            rps,
+            rps * slots.len() as f64
+        );
+
+        Ok(Self {
+            inner: Arc::new(MirrorHttpInner {
+                slots,
+                rr: AtomicUsize::new(0),
+            }),
+        })
+    }
+
+    fn next_slot_index(&self) -> usize {
+        let n = self.inner.slots.len().max(1);
+        self.inner.rr.fetch_add(1, Ordering::Relaxed) % n
+    }
+
+    pub async fn get_bytes(&self, url: &str, timeout: Duration) -> anyhow::Result<Vec<u8>> {
+        let mut last_err = None;
+
+        for attempt in 0..FETCH_RETRIES {
+            let slot_idx = self.next_slot_index();
+            let slot = &self.inner.slots[slot_idx];
+            slot.limiter.acquire().await;
+
+            match slot.client.get(url).timeout(timeout).send().await {
+                Ok(response) => {
+                    let status = response.status();
+                    let retry_after = parse_retry_after(response.headers());
+
+                    if status == StatusCode::TOO_MANY_REQUESTS
+                        || status == StatusCode::SERVICE_UNAVAILABLE
+                        || status.as_u16() == 408
+                    {
+                        let delay = rate_limit_delay(attempt, retry_after);
+                        warn!(
+                            "mirror rate-limited slot={} status={} attempt={}/{} sleep={:?}",
+                            slot.label,
+                            status.as_u16(),
+                            attempt + 1,
+                            FETCH_RETRIES,
+                            delay
+                        );
+                        slot.limiter.penalize(delay).await;
+                        tokio::time::sleep(delay).await;
+                        last_err = Some(anyhow::anyhow!(
+                            "http {} from {} (attempt {}/{})",
+                            status.as_u16(),
+                            slot.label,
+                            attempt + 1,
+                            FETCH_RETRIES
+                        ));
+                        continue;
+                    }
+
+                    let body = response.bytes().await?;
+                    if !status.is_success() {
+                        last_err = Some(anyhow::anyhow!(
+                            "http error slot={} attempt={}/{} status={}: body preview: {:.200}",
+                            slot.label,
+                            attempt + 1,
+                            FETCH_RETRIES,
+                            status,
+                            String::from_utf8_lossy(&body)
+                        ));
+                        if status.is_server_error() && attempt + 1 < FETCH_RETRIES {
+                            let delay = normal_backoff(attempt);
+                            slot.limiter.penalize(delay).await;
+                            tokio::time::sleep(delay).await;
+                            continue;
+                        }
+                        break;
+                    }
+
+                    return Ok(body.to_vec());
+                }
+                Err(e) => {
+                    last_err = Some(anyhow::anyhow!(
+                        "request error slot={} attempt={}/{}: {}",
+                        slot.label,
+                        attempt + 1,
+                        FETCH_RETRIES,
+                        e
+                    ));
+                    if attempt + 1 < FETCH_RETRIES {
+                        let delay = normal_backoff(attempt);
+                        slot.limiter.penalize(delay).await;
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("mirror get_bytes exhausted retries")))
+    }
+
+    pub async fn get_json<T: for<'de> Deserialize<'de>>(
+        &self,
+        url: &str,
+        timeout: Duration,
+    ) -> anyhow::Result<T> {
+        let body = self.get_bytes(url, timeout).await?;
+        serde_json::from_slice(&body).with_context(|| {
+            format!(
+                "json decode failed ({} bytes), preview: {:.200}",
+                body.len(),
+                String::from_utf8_lossy(&body)
+            )
+        })
+    }
+}
+
+fn build_slot(
+    proxy: Option<&str>,
+    label: &str,
+    rps: f64,
+    user_agent: &'static str,
+    pool_max_idle_per_host: usize,
+) -> anyhow::Result<MirrorSlot> {
+    let mut builder = HttpClient::builder()
+        .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+        .pool_max_idle_per_host(pool_max_idle_per_host.max(1))
+        .user_agent(user_agent);
+    if let Some(proxy) = proxy {
+        builder = builder.proxy(reqwest::Proxy::all(proxy)?);
+    }
+    Ok(MirrorSlot {
+        client: builder.build()?,
+        limiter: SlotLimiter::new(rps),
+        label: label.to_owned(),
+    })
+}
+
+fn proxy_label(proxy: &str) -> String {
+    // Avoid dumping credentials into logs.
+    if let Ok(url) = reqwest::Url::parse(proxy) {
+        let host = url.host_str().unwrap_or("proxy");
+        let port = url
+            .port_or_known_default()
+            .map(|p| format!(":{p}"))
+            .unwrap_or_default();
+        return format!("proxy://{host}{port}");
+    }
+    "proxy".to_owned()
+}
+
+fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    let value = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?;
+    if let Ok(seconds) = value.trim().parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    None
+}
+
+fn rate_limit_delay(attempt: usize, retry_after: Option<Duration>) -> Duration {
+    let base = retry_after.unwrap_or_else(|| {
+        Duration::from_secs(2u64.saturating_pow(attempt.min(5) as u32)).max(MIN_RETRY_AFTER)
+    });
+    let capped = base.min(MAX_RETRY_AFTER).max(MIN_RETRY_AFTER);
+    let jitter_ms = rand::rng().random_range(0..500);
+    capped + Duration::from_millis(jitter_ms)
+}
+
+fn normal_backoff(attempt: usize) -> Duration {
+    let base = Duration::from_secs(1u64 << attempt.min(4));
+    let jitter_ms = rand::rng().random_range(0..250);
+    base + Duration::from_millis(jitter_ms)
+}
 
 #[derive(Deserialize)]
 struct AvailableLogsResp {
@@ -44,6 +346,7 @@ struct RemoteMessage {
     tags: HashMap<String, String>,
 }
 
+/// Mirror remote logs for a specific channel.
 pub async fn run(
     db: Client,
     base_url: String,
@@ -53,14 +356,18 @@ pub async fn run(
     month: Option<u32>,
     day: Option<u32>,
     batch: usize,
+    http_concurrency: usize,
+    proxies: Vec<String>,
+    rps: f64,
 ) -> anyhow::Result<()> {
     let base_url = base_url.trim_end_matches('/').to_string();
-    let http = HttpClient::builder()
-        .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-        .tcp_nodelay(true)
-        .pool_max_idle_per_host(8)
-        .user_agent("rustlog-mirror/0.1")
-        .build()?;
+    let options = RunDaysOptions::new(batch, http_concurrency);
+    let http = MirrorHttp::new(
+        &proxies,
+        rps,
+        "rustlog-mirror/0.2",
+        options.http_concurrency,
+    )?;
 
     let avail = if let Some(ref cache_root) = local_cache {
         fetch_available_local(cache_root, &channel)?
@@ -86,120 +393,341 @@ pub async fn run(
     tasks.sort();
     info!("Found {} daily logs to mirror", tasks.len());
 
-    let total = tasks.len();
-    let concurrency = 8usize;
+    if tasks.is_empty() {
+        return Ok(());
+    }
 
-    let mut stream = stream::iter(tasks.into_iter().enumerate())
-        .map(|(idx, (y, m, d))| {
-            let http = http.clone();
-            let db = db.clone();
-            let base_url = base_url.clone();
-            let channel = channel.clone();
-            let local_cache = local_cache.clone();
-            async move {
-                let started = Instant::now();
-                let res = process_day(
-                    &http,
-                    &db,
-                    &base_url,
-                    local_cache.as_deref(),
-                    &channel,
+    run_days(
+        db,
+        &http,
+        &base_url,
+        local_cache.as_deref(),
+        &channel,
+        tasks,
+        options,
+    )
+    .await
+}
+
+/// Batch mirror: downloads all given days concurrently and inserts through a single writer.
+pub async fn run_days(
+    db: Client,
+    http: &MirrorHttp,
+    base_url: &str,
+    local_cache: Option<&str>,
+    channel: &str,
+    days: Vec<(u32, u32, u32)>,
+    options: RunDaysOptions,
+) -> anyhow::Result<()> {
+    if days.is_empty() {
+        return Ok(());
+    }
+
+    let state = OperationalState::load(Arc::new(db.clone())).await?;
+
+    let (global_start_ms, global_end_ms) = compute_time_range(&days);
+    info!("Date range: {} to {}", global_start_ms, global_end_ms);
+    let channel_id = resolve_channel_id(&db, channel).await?;
+    info!("Resolved channel_id: {:?}", channel_id);
+
+    let seen_ids: Arc<DashSet<Uuid>> = Arc::new(DashSet::new());
+    if let Some(ref cid) = channel_id {
+        let existing = fetch_existing_ids(&db, cid, global_start_ms, global_end_ms).await?;
+        info!("Pre-loaded {} existing message IDs", existing.len());
+        for id in existing {
+            seen_ids.insert(id);
+        }
+    }
+
+    let (tx, mut rx) = mpsc::channel::<StructuredMessage<'static>>(CHANNEL_BUF_SIZE);
+
+    let db_writer = db.clone();
+    let writer_state = state.clone();
+    let insert_max_rows = options.insert_max_rows;
+    let writer_handle = tokio::spawn(async move {
+        info!("Writer task started");
+        let mut insert = match db_writer
+            .insert::<StructuredMessage<'static>>(MESSAGES_STRUCTURED_TABLE)
+            .await
+            .context("open insert")
+        {
+            Ok(i) => i,
+            Err(e) => {
+                error!("Writer failed to open insert: {}", e);
+                return Err(e);
+            }
+        };
+        info!("Insert opened");
+
+        let mut written: u64 = 0;
+        let mut first_msg = true;
+
+        while let Some(msg) = rx.recv().await {
+            if !writer_state.permits_historical_message(&msg.channel_id, &msg.user_id) {
+                continue;
+            }
+
+            if first_msg {
+                info!("Writer received first message");
+                first_msg = false;
+            }
+            if let Err(e) = insert.write(&msg).await {
+                error!("insert.write failed after {} rows: {}", written, e);
+                return Err(e.into());
+            }
+            written += 1;
+
+            if written % insert_max_rows == 0 {
+                info!("Flushing insert after {} rows...", written);
+                if let Err(e) = insert.end().await {
+                    error!("insert.end failed after {} rows: {}", written, e);
+                    return Err(e.into());
+                }
+                info!("Insert flushed, reopening...");
+                insert = match db_writer
+                    .insert::<StructuredMessage<'static>>(MESSAGES_STRUCTURED_TABLE)
+                    .await
+                    .context("reopen insert")
+                {
+                    Ok(i) => i,
+                    Err(e) => {
+                        error!("Failed to reopen insert after {} rows: {}", written, e);
+                        return Err(e);
+                    }
+                };
+            }
+        }
+
+        info!(
+            "Channel closed, flushing final insert. Total written={}",
+            written
+        );
+        if let Err(e) = insert.end().await {
+            error!("final insert.end failed after {} rows: {}", written, e);
+            return Err(e.into());
+        }
+        info!(
+            "Writer finished successfully. Total rows written: {}",
+            written
+        );
+        anyhow::Result::<(), anyhow::Error>::Ok(())
+    });
+
+    let total = days.len();
+    let mut failed: Vec<(u32, u32, u32)> = Vec::new();
+    let seen_ids_retry = Arc::clone(&seen_ids);
+
+    {
+        let tx_stream = tx.clone();
+        let seen_ids_stream = Arc::clone(&seen_ids);
+        let state_stream = state.clone();
+        let http = http.clone();
+        let mut stream = stream::iter(days.into_iter().enumerate())
+            .map(move |(idx, (y, m, d))| {
+                let http = http.clone();
+                let tx = tx_stream.clone();
+                let seen_ids = Arc::clone(&seen_ids_stream);
+                let local_cache = local_cache.map(|s| s.to_string());
+                let channel = channel.to_owned();
+                let base_url = base_url.to_owned();
+                let state = state_stream.clone();
+                async move {
+                    let started = Instant::now();
+                    let res = process_day(
+                        &http,
+                        &tx,
+                        &seen_ids,
+                        &state,
+                        local_cache.as_deref(),
+                        &channel,
+                        &base_url,
+                        y,
+                        m,
+                        d,
+                    )
+                    .await;
+                    (idx, res, started.elapsed(), y, m, d)
+                }
+            })
+            .buffer_unordered(options.http_concurrency);
+
+        while let Some((idx, res, elapsed, y, m, d)) = stream.next().await {
+            match res {
+                Ok(stats) => info!(
+                    "[{:>3}/{:>3}] {:04}-{:02}-{:02} added={} skipped_dup={} skipped_no_id={} skipped_optout={} in {:?}",
+                    idx + 1,
+                    total,
                     y,
                     m,
                     d,
-                    batch,
-                )
-                .await;
-                (idx, res, started.elapsed(), y, m, d)
+                    stats.added,
+                    stats.skipped_dup,
+                    stats.skipped_no_id,
+                    stats.skipped_optout,
+                    elapsed
+                ),
+                Err(err) => {
+                    warn!(
+                        "[{:>3}/{:>3}] {:04}-{:02}-{:02} failed: {}",
+                        idx + 1,
+                        total,
+                        y,
+                        m,
+                        d,
+                        err
+                    );
+                    failed.push((y, m, d));
+                }
             }
-        })
-        .buffer_unordered(concurrency);
-
-    while let Some((idx, res, elapsed, y, m, d)) = stream.next().await {
-        match res {
-            Ok((added, skipped, existed)) => info!(
-                "[{:>3}/{:>3}] {:04}-{:02}-{:02} added={} skipped={} existing={} in {:?}",
-                idx + 1,
-                total,
-                y,
-                m,
-                d,
-                added,
-                skipped,
-                existed,
-                elapsed
-            ),
-            Err(err) => warn!("[{:>3}/{:>3}] {:04}-{:02}-{:02} failed: {}", idx + 1, total, y, m, d, err),
         }
     }
+
+    if !failed.is_empty() {
+        info!("Retrying {} failed days...", failed.len());
+        {
+            let tx_retry = tx.clone();
+            let state_retry = state.clone();
+            let http = http.clone();
+            let mut retry_stream = stream::iter(failed.into_iter().enumerate())
+                .map(move |(idx, (y, m, d))| {
+                    let http = http.clone();
+                    let tx = tx_retry.clone();
+                    let seen_ids = Arc::clone(&seen_ids_retry);
+                    let local_cache = local_cache.map(|s| s.to_string());
+                    let channel = channel.to_owned();
+                    let base_url = base_url.to_owned();
+                    let state = state_retry.clone();
+                    async move {
+                        let started = Instant::now();
+                        let res = process_day(
+                            &http,
+                            &tx,
+                            &seen_ids,
+                            &state,
+                            local_cache.as_deref(),
+                            &channel,
+                            &base_url,
+                            y,
+                            m,
+                            d,
+                        )
+                        .await;
+                        (idx, res, started.elapsed(), y, m, d)
+                    }
+                })
+                .buffer_unordered(options.http_concurrency);
+
+            while let Some((idx, res, elapsed, y, m, d)) = retry_stream.next().await {
+                match res {
+                    Ok(stats) => info!(
+                        "[retry {:>3}/{:>3}] {:04}-{:02}-{:02} added={} skipped_dup={} skipped_no_id={} skipped_optout={} in {:?}",
+                        idx + 1,
+                        total,
+                        y,
+                        m,
+                        d,
+                        stats.added,
+                        stats.skipped_dup,
+                        stats.skipped_no_id,
+                        stats.skipped_optout,
+                        elapsed
+                    ),
+                    Err(err) => warn!(
+                        "[retry {:>3}/{:>3}] {:04}-{:02}-{:02} failed: {}",
+                        idx + 1,
+                        total,
+                        y,
+                        m,
+                        d,
+                        err
+                    ),
+                }
+            }
+        }
+    }
+
+    drop(tx);
+    writer_handle
+        .await
+        .context("writer task join")?
+        .context("writer task error")?;
 
     Ok(())
 }
 
+struct DayStats {
+    added: u64,
+    skipped_dup: u64,
+    skipped_no_id: u64,
+    skipped_optout: u64,
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn process_day(
-    http: &HttpClient,
-    db: &Client,
-    base_url: &str,
+    http: &MirrorHttp,
+    tx: &mpsc::Sender<StructuredMessage<'static>>,
+    seen_ids: &DashSet<Uuid>,
+    state: &OperationalState,
     local_cache: Option<&str>,
     channel: &str,
+    base_url: &str,
     y: u32,
     m: u32,
     d: u32,
-    batch: usize,
-) -> anyhow::Result<(u64, u64, usize)> {
-    let msgs_result = if let Some(ref cache_root) = local_cache {
+) -> anyhow::Result<DayStats> {
+    let msgs_result = if let Some(cache_root) = local_cache {
         fetch_daily_local(cache_root, channel, y, m, d)
     } else {
         let url = format!(
             "{}/channel/{}/{:04}/{:02}/{:02}?jsonBasic=1",
             base_url, channel, y, m, d
         );
-        fetch_daily_remote(http, &url).await.map_err(|e| e.into())
+        fetch_daily_remote(http, &url).await
     };
 
     match msgs_result {
         Ok(msgs) => {
-            let start_ms = chrono::NaiveDate::from_ymd_opt(y as i32, m, d)
-                .and_then(|d| d.and_hms_opt(0, 0, 0))
-                .map(|dt| dt.and_utc().timestamp_millis() as u64)
-                .unwrap_or(0);
-            let end_ms = start_ms.saturating_add(24 * 60 * 60 * 1000);
-            let mut seen = fetch_existing_keys(db, channel, start_ms, end_ms).await?;
-            let existed = seen.len();
-            let mut buffer: Vec<StructuredMessage<'static>> = Vec::with_capacity(batch);
-            let mut added: u64 = 0;
-            let mut processed: u64 = 0;
+            let mut stats = DayStats {
+                added: 0,
+                skipped_dup: 0,
+                skipped_no_id: 0,
+                skipped_optout: 0,
+            };
+
             for msg in msgs {
-                processed += 1;
-                if let Some((mapped, key)) = map_message(channel, msg) {
-                    if !seen.insert(key) {
-                        continue;
+                match map_message(channel, msg) {
+                    MapResult::Ok(mapped, id) => {
+                        if !state.permits_historical_message(&mapped.channel_id, &mapped.user_id) {
+                            stats.skipped_optout += 1;
+                            continue;
+                        }
+                        if !seen_ids.insert(id) {
+                            stats.skipped_dup += 1;
+                            continue;
+                        }
+                        tx.send(mapped).await.context("send to writer channel")?;
+                        stats.added += 1;
                     }
-                    buffer.push(mapped);
-                    added += 1;
-                    if buffer.len() >= batch {
-                        insert_batch(db, &mut buffer).await?;
-                    }
+                    MapResult::SkipNoId => stats.skipped_no_id += 1,
+                    MapResult::SkipInvalid => {}
                 }
             }
-            if !buffer.is_empty() {
-                insert_batch(db, &mut buffer).await?;
-            }
-            let skipped = processed.saturating_sub(added);
-            Ok((added, skipped, existed))
+
+            Ok(stats)
         }
         Err(err) => Err(err),
     }
 }
 
 async fn fetch_available_remote(
-    http: &HttpClient,
+    http: &MirrorHttp,
     base_url: &str,
     channel: &str,
 ) -> anyhow::Result<Vec<AvailableLogEntry>> {
     let url = format!("{}/list?channel={}", base_url, channel);
-    let resp: AvailableLogsResp = http.get(url).send().await?.json().await?;
+    let resp: AvailableLogsResp = http
+        .get_json(&url, Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+        .await?;
     Ok(resp.available_logs.unwrap_or_default())
 }
 
@@ -208,26 +736,27 @@ fn fetch_available_local(
     channel: &str,
 ) -> anyhow::Result<Vec<AvailableLogEntry>> {
     let mut out = Vec::new();
-    let daily_root = std::path::Path::new(cache_root).join(channel).join("daily");
-    if !daily_root.exists() {
+    let channel_dir = std::path::Path::new(cache_root).join(channel).join("daily");
+    if !channel_dir.is_dir() {
         return Ok(out);
     }
-    for year_dir in std::fs::read_dir(&daily_root)? {
-        let year_dir = year_dir?;
-        let year_name = year_dir.file_name().to_string_lossy().into_owned();
-        let year_path = year_dir.path();
-        if !year_path.is_dir() {
+    for year_entry in std::fs::read_dir(&channel_dir)? {
+        let year_entry = year_entry?;
+        if !year_entry.file_type()?.is_dir() {
             continue;
         }
-        for month_dir in std::fs::read_dir(&year_path)? {
-            let month_dir = month_dir?;
-            let month_name = month_dir.file_name().to_string_lossy().into_owned();
-            let month_path = month_dir.path();
-            if !month_path.is_dir() {
+        let year_name = year_entry.file_name().to_string_lossy().into_owned();
+        for month_entry in std::fs::read_dir(year_entry.path())? {
+            let month_entry = month_entry?;
+            if !month_entry.file_type()?.is_dir() {
                 continue;
             }
-            for day_file in std::fs::read_dir(&month_path)? {
+            let month_name = month_entry.file_name().to_string_lossy().into_owned();
+            for day_file in std::fs::read_dir(month_entry.path())? {
                 let day_file = day_file?;
+                if !day_file.file_type()?.is_file() {
+                    continue;
+                }
                 let fname = day_file.file_name().to_string_lossy().into_owned();
                 if !fname.to_lowercase().ends_with(".json") {
                     continue;
@@ -244,29 +773,11 @@ fn fetch_available_local(
     Ok(out)
 }
 
-async fn fetch_daily_remote(http: &HttpClient, url: &str) -> anyhow::Result<Vec<RemoteMessage>> {
-    let resp: DailyLogResp = http.get(url).send().await?.json().await?;
+async fn fetch_daily_remote(http: &MirrorHttp, url: &str) -> anyhow::Result<Vec<RemoteMessage>> {
+    let resp: DailyLogResp = http
+        .get_json(url, Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+        .await?;
     Ok(resp.messages.unwrap_or_default())
-}
-
-async fn fetch_existing_keys(
-    db: &Client,
-    channel_login: &str,
-    start_ms: u64,
-    end_ms: u64,
-) -> anyhow::Result<HashSet<DedupKey>> {
-    let mut set = HashSet::new();
-    let esc_channel = channel_login.replace('\'', "\\'");
-    let sql = format!(
-        "SELECT user_id, timestamp, text FROM {} \
-         WHERE channel_login='{}' AND timestamp >= {} AND timestamp < {}",
-        MESSAGES_STRUCTURED_TABLE, esc_channel, start_ms, end_ms
-    );
-    let mut cursor = db.query(&sql).fetch::<(String, u64, String)>()?;
-    while let Some(row) = cursor.next().await? {
-        set.insert(row);
-    }
-    Ok(set)
 }
 
 fn fetch_daily_local(
@@ -287,29 +798,119 @@ fn fetch_daily_local(
     Ok(resp.messages.unwrap_or_default())
 }
 
-type DedupKey = (String, u64, String);
+async fn resolve_channel_id(db: &Client, channel_login: &str) -> anyhow::Result<Option<String>> {
+    let esc = channel_login.replace('\'', "\\'");
+    let sql = format!(
+        "SELECT DISTINCT channel_id FROM {} WHERE channel_login = '{}' LIMIT 1",
+        MESSAGES_STRUCTURED_TABLE, esc
+    );
 
-fn map_message(
-    channel_login: &str,
-    msg: RemoteMessage,
-) -> Option<(StructuredMessage<'static>, DedupKey)> {
-    let ts_str = msg.timestamp?;
-    let ts_ms = DateTime::parse_from_rfc3339(&ts_str)
-        .ok()?
-        .with_timezone(&Utc)
-        .timestamp_millis()
-        .max(0);
+    #[derive(Row, Deserialize)]
+    struct RowChannelId {
+        channel_id: String,
+    }
+
+    let mut cursor = db.query(&sql).fetch::<RowChannelId>()?;
+    if let Some(row) = cursor.next().await? {
+        Ok(Some(row.channel_id))
+    } else {
+        Ok(None)
+    }
+}
+
+async fn fetch_existing_ids(
+    db: &Client,
+    channel_id: &str,
+    start_ms: u64,
+    end_ms: u64,
+) -> anyhow::Result<Vec<Uuid>> {
+    let esc = channel_id.replace('\'', "\\'");
+    let sql = format!(
+        "SELECT id FROM {} \
+         WHERE channel_id = '{}' \
+           AND timestamp >= {} \
+           AND timestamp < {}",
+        MESSAGES_STRUCTURED_TABLE, esc, start_ms, end_ms
+    );
+
+    #[derive(Row, Deserialize)]
+    struct ExistingId {
+        #[serde(with = "clickhouse::serde::uuid")]
+        id: Uuid,
+    }
+
+    let mut ids = Vec::new();
+    let mut cursor = db.query(&sql).fetch::<ExistingId>()?;
+    while let Some(row) = cursor.next().await? {
+        ids.push(row.id);
+    }
+    Ok(ids)
+}
+
+fn compute_time_range(tasks: &[(u32, u32, u32)]) -> (u64, u64) {
+    let (min_y, min_m, min_d) = tasks.first().unwrap();
+    let (max_y, max_m, max_d) = tasks.last().unwrap();
+
+    let start_ms = chrono::NaiveDate::from_ymd_opt(*min_y as i32, *min_m, *min_d)
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|dt| dt.and_utc().timestamp_millis() as u64)
+        .unwrap_or(0);
+
+    let end_ms = chrono::NaiveDate::from_ymd_opt(*max_y as i32, *max_m, *max_d)
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|dt| dt.and_utc().timestamp_millis() as u64)
+        .unwrap_or(0)
+        .saturating_add(24 * 60 * 60 * 1000);
+
+    (start_ms, end_ms)
+}
+
+enum MapResult {
+    Ok(StructuredMessage<'static>, Uuid),
+    SkipNoId,
+    SkipInvalid,
+}
+
+fn parse_message_id(msg: &RemoteMessage) -> Option<Uuid> {
+    msg.id
+        .as_deref()
+        .or_else(|| msg.tags.get("id").map(String::as_str))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|s| Uuid::parse_str(s).ok())
+}
+
+fn map_message(channel_login: &str, msg: RemoteMessage) -> MapResult {
+    let Some(parsed_id) = parse_message_id(&msg) else {
+        return MapResult::SkipNoId;
+    };
+
+    let Some(ts_str) = msg.timestamp else {
+        return MapResult::SkipInvalid;
+    };
+    let Some(ts_ms) = DateTime::parse_from_rfc3339(&ts_str)
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc).timestamp_millis().max(0))
+    else {
+        return MapResult::SkipInvalid;
+    };
 
     if ts_ms < MIN_VALID_TS_MS {
-        // Skip obviously broken timestamps (epoch/1970 junk).
-        return None;
+        return MapResult::SkipInvalid;
     }
 
     let ts = ts_ms as u64;
 
-    let channel_id = msg.tags.get("room-id")?.to_owned();
-    let user_id = msg.tags.get("user-id")?.to_owned();
-    let key_user_id = user_id.clone();
+    let Some(channel_id) = msg.tags.get("room-id").cloned() else {
+        return MapResult::SkipInvalid;
+    };
+    let Some(user_id) = msg.tags.get("user-id").cloned() else {
+        return MapResult::SkipInvalid;
+    };
+    if user_id.is_empty() {
+        return MapResult::SkipInvalid;
+    }
+
     let user_login = msg
         .display_name
         .as_deref()
@@ -319,13 +920,13 @@ fn map_message(
     let color = msg
         .tags
         .get("color")
-        .and_then(|c| c.strip_prefix('#').or(Some(c.as_str())))
+        .map(|c: &String| c.strip_prefix('#').unwrap_or(c.as_str()))
         .and_then(|c| u32::from_str_radix(c, 16).ok());
 
     let badges: Vec<Cow<'static, str>> = msg
         .tags
         .get("badges")
-        .map(|b| {
+        .map(|b: &String| {
             b.split(',')
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string().into())
@@ -366,19 +967,25 @@ fn map_message(
         channel_id: channel_id.into(),
         channel_login: channel_login.to_owned().into(),
         timestamp: ts,
-        id: msg
-            .id
-            .as_deref()
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .unwrap_or_else(Uuid::new_v4),
+        id: parsed_id,
         message_type: MessageType::PrivMsg,
         user_id: user_id.into(),
         user_login: user_login.into(),
         display_name: display_name.into(),
         color,
-        user_type: msg.tags.get("user-type").cloned().unwrap_or_default().into(),
+        user_type: msg
+            .tags
+            .get("user-type")
+            .cloned()
+            .unwrap_or_default()
+            .into(),
         badges,
-        badge_info: msg.tags.get("badge-info").cloned().unwrap_or_default().into(),
+        badge_info: msg
+            .tags
+            .get("badge-info")
+            .cloned()
+            .unwrap_or_default()
+            .into(),
         client_nonce: msg
             .tags
             .get("client-nonce")
@@ -392,25 +999,54 @@ fn map_message(
         extra_tags,
     };
 
-    let key: DedupKey = (key_user_id, ts, msg.text.unwrap_or_default());
-    Some((structured, key))
+    MapResult::Ok(structured, parsed_id)
 }
 
-async fn insert_batch(
-    db: &Client,
-    buffer: &mut Vec<StructuredMessage<'static>>,
-) -> anyhow::Result<()> {
-    if buffer.is_empty() {
-        return Ok(());
+#[cfg(test)]
+mod tests {
+    use super::{map_message, parse_message_id, MapResult, RemoteMessage};
+    use std::collections::HashMap;
+    use uuid::Uuid;
+
+    fn base_msg() -> RemoteMessage {
+        let mut tags = HashMap::new();
+        tags.insert("room-id".into(), "123".into());
+        tags.insert("user-id".into(), "456".into());
+        tags.insert("display-name".into(), "Alice".into());
+        RemoteMessage {
+            text: Some("hi".into()),
+            display_name: Some("Alice".into()),
+            timestamp: Some("2024-01-02T03:04:05.678Z".into()),
+            id: Some("00000000-0000-4000-8000-000000000001".into()),
+            tags,
+        }
     }
-    let write_count = buffer.len();
-    let mut inserter = db
-        .insert(MESSAGES_STRUCTURED_TABLE)
-        .context("open inserter")?;
-    for row in buffer.drain(..) {
-        inserter.write(&row).await.context("write row")?;
+
+    #[test]
+    fn requires_message_id() {
+        let mut msg = base_msg();
+        msg.id = None;
+        assert!(matches!(map_message("chan", msg), MapResult::SkipNoId));
     }
-    inserter.end().await.context("flush inserter")?;
-    info!("Flushed batch of {}", write_count);
-    Ok(())
+
+    #[test]
+    fn accepts_id_from_tags() {
+        let mut msg = base_msg();
+        msg.id = None;
+        msg.tags
+            .insert("id".into(), "00000000-0000-4000-8000-000000000002".into());
+        let id = parse_message_id(&msg).unwrap();
+        assert_eq!(
+            id,
+            Uuid::parse_str("00000000-0000-4000-8000-000000000002").unwrap()
+        );
+        assert!(matches!(map_message("chan", msg), MapResult::Ok(_, _)));
+    }
+
+    #[test]
+    fn requires_user_id() {
+        let mut msg = base_msg();
+        msg.tags.remove("user-id");
+        assert!(matches!(map_message("chan", msg), MapResult::SkipInvalid));
+    }
 }
