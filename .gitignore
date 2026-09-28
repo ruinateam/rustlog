@@ -8,3 +8,7 @@ tmp/
 .vscode/
 .idea/
 .DS_Store
+.omo/
+.sisyphus/
+.playwright-mcp/
+__migration_probe__/
