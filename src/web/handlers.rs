@@ -1,18 +1,19 @@
 use super::{
     responders::logs::LogsResponse,
     schema::{
-        AvailableLogs, AvailableLogsParams, Channel, ChannelIdType, ChannelLogsByDatePath,
-        ChannelLogsStats, ChannelMonthPath, ChannelParam, ChannelsList, LogsParams, LogsPathChannel,
-        ChannelYearPath, ChannelDayPath, SearchParams, TierEntry, TierResponse, TierYearResponse, TierDayResponse, UserIdType, UserLogPathParams, UserLogsDatePath,
-        UserLogsStats, UserNameHistoryParam, UserParam,
+        AvailableLogs, AvailableLogsParams, Channel, ChannelDayPath, ChannelIdType,
+        ChannelLogsByDatePath, ChannelLogsStats, ChannelMonthPath, ChannelParam, ChannelYearPath,
+        ChannelsList, ChatBadge, ChatBadgesResponse, LogsParams, LogsPathChannel, SearchParams,
+        TierDayResponse, TierEntry, TierResponse, TierYearResponse, UserIdType, UserLogPathParams,
+        UserLogsDatePath, UserLogsStats, UserNameHistoryParam, UserParam,
     },
 };
 use crate::{
     app::App,
     db::{
-        self, get_month_windows, get_month_windows_with_ranges, get_day_windows, get_day_windows_with_ranges, read_available_channel_logs,
-        read_available_user_logs, read_channel, read_random_channel_line, read_random_user_line,
-        read_user, WindowsAggRow,
+        self, get_day_windows, get_day_windows_with_ranges, get_month_windows,
+        get_month_windows_with_ranges, read_available_channel_logs, read_available_user_logs,
+        read_channel, read_random_channel_line, read_random_user_line, read_user, WindowsAggRow,
     },
     error::Error,
     logs::{schema::LogRangeParams, stream::LogsStream},
@@ -27,25 +28,22 @@ use axum::{
     Json,
 };
 use axum_extra::{headers::CacheControl, TypedHeader};
-use chrono::{DateTime, Days, Months, NaiveDate, NaiveTime, Utc, Datelike};
 use chrono::offset::FixedOffset;
+use chrono::{DateTime, Datelike, Days, Months, NaiveDate, NaiveTime, Utc};
 use rand::{distr::Alphanumeric, rng, Rng};
-use std::collections::{HashMap, HashSet};
-use std::time::Duration;
-use tracing::{debug, error, warn};
 use reqwest::Client as HttpClient;
 use serde::Deserialize;
 use serde_json;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
+use tracing::{debug, error, warn};
 // use std::process::Command; // not used
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, ACCEPT};
-
-const RESPONSE_LIMIT: usize = 500;
-const TIER_TIMEZONE: &str = "Europe/Moscow";
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 
 pub async fn get_channels(app: State<App>) -> impl IntoApiResponse {
-    let channel_ids = app.config.channels.read().unwrap().clone();
+    let channel_ids = app.state.channel_ids();
 
     let channels = app
         .get_users(Vec::from_iter(channel_ids), vec![], false)
@@ -58,7 +56,31 @@ pub async fn get_channels(app: State<App>) -> impl IntoApiResponse {
             .map(|(user_id, name)| Channel { name, user_id })
             .collect(),
     });
-    (cache_header(600), json)
+    (no_cache_header(), json)
+}
+
+pub async fn get_chat_badges(
+    Path(channel_id): Path<String>,
+    app: State<App>,
+) -> Result<impl IntoApiResponse> {
+    let (global, channel) = app.get_chat_badges(&channel_id).await?;
+    let badges = global
+        .into_iter()
+        .chain(channel)
+        .flat_map(|set| {
+            let set_id = set.set_id.to_string();
+            set.versions.into_iter().map(move |badge| ChatBadge {
+                set_id: set_id.clone(),
+                version: badge.id.to_string(),
+                image_url_1x: badge.image_url_1x,
+                image_url_2x: badge.image_url_2x,
+                title: badge.title,
+                description: badge.description,
+            })
+        })
+        .collect();
+
+    Ok((cache_header(3600), Json(ChatBadgesResponse { badges })))
 }
 
 pub async fn get_channel_logs(
@@ -105,6 +127,8 @@ pub async fn get_channel_stats(
         ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
         ChannelIdType::Id => channel.clone(),
     };
+    app.check_opted_out(&channel_id, None)?;
+
     let (message_count, stats_rows) =
         db::get_channel_stats(&app.db, &channel_id, range_params).await?;
 
@@ -176,11 +200,17 @@ async fn load_sully_streams(channel: &str, year: i32) -> Option<SullyStreamsResp
                     return Some(resp);
                 }
                 Err(e) => {
-                    error!("sully fetch streams failed channel={} year={} err={:?}", channel, year, e);
+                    error!(
+                        "sully fetch streams failed channel={} year={} err={:?}",
+                        channel, year, e
+                    );
                 }
             },
             Err(e) => {
-                error!("sully fetch internal_id failed channel={} err={:?}", channel, e);
+                error!(
+                    "sully fetch internal_id failed channel={} err={:?}",
+                    channel, e
+                );
             }
         };
     }
@@ -193,7 +223,10 @@ async fn load_sully_streams(channel: &str, year: i32) -> Option<SullyStreamsResp
         );
         Some(cached)
     } else {
-        warn!("sully fetch failed and no cache available channel={} year={}", channel, year);
+        warn!(
+            "sully fetch failed and no cache available channel={} year={}",
+            channel, year
+        );
         None
     }
 }
@@ -214,20 +247,15 @@ pub async fn get_channel_tiers_month(
     app.check_opted_out(&channel_id, None)?;
 
     let year: i32 = month_path.year.parse()?;
-    let month: u32 = normalize_month(month_path.month.parse()?)?;
+    let month = normalize_month(month_path.month.parse()?)?;
     let yyyymm = year * 100 + month as i32;
 
-    let mode = mode_query.mode.unwrap_or(TierMode::All);
+    let mode = mode_query.mode;
     let bot_filter: HashSet<String> = mode_query
         .exclude_bots
-        .as_ref()
-        .map(|s| {
-            s.split(',')
-                .map(|v| v.trim().to_lowercase())
-                .filter(|v| !v.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
+        .iter()
+        .map(|bot| bot.to_lowercase())
+        .collect();
 
     // Determine intervals from Sully for this month. Always try live fetch, fallback to cache.
     let streams = load_sully_streams(&month_path.channel_info.channel, year).await;
@@ -239,40 +267,36 @@ pub async fn get_channel_tiers_month(
 
     let rows = match mode {
         TierMode::All => get_month_windows(&app.db, &channel_id, yyyymm).await?,
-        TierMode::Online => get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &intervals, true)
-            .await?
-            .into_iter()
-            .map(|(user_id, agg)| WindowsAggRow {
-                user_id,
-                messages: agg.messages,
-                uniq_messages: agg.uniq_messages,
-                w1: agg.w1,
-                w5: agg.w5,
-                w30: agg.w30,
-                w15: agg.w15,
-                w60: agg.w60,
-            })
-            .collect(),
-        TierMode::Offline => {
-            let online = get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &intervals, true).await?;
-            let all = get_month_windows(&app.db, &channel_id, yyyymm).await?;
-            all.into_iter()
-                .map(|row| {
-                    let online_row = online.get(&row.user_id);
-                    WindowsAggRow {
-                        user_id: row.user_id,
-                        messages: row.messages.saturating_sub(online_row.map(|o| o.messages).unwrap_or(0)),
-                        uniq_messages: row
-                            .uniq_messages
-                            .saturating_sub(online_row.map(|o| o.uniq_messages).unwrap_or(0)),
-                        w1: row.w1.saturating_sub(online_row.map(|o| o.w1).unwrap_or(0)),
-                        w5: row.w5.saturating_sub(online_row.map(|o| o.w5).unwrap_or(0)),
-                        w15: row.w15.saturating_sub(online_row.map(|o| o.w15).unwrap_or(0)),
-                        w30: row.w30.saturating_sub(online_row.map(|o| o.w30).unwrap_or(0)),
-                        w60: row.w60.saturating_sub(online_row.map(|o| o.w60).unwrap_or(0)),
-                    }
+        TierMode::Online => {
+            get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &intervals, true)
+                .await?
+                .into_iter()
+                .map(|(user_id, agg)| WindowsAggRow {
+                    user_id,
+                    messages: agg.messages,
+                    uniq_messages: agg.uniq_messages,
+                    w1: agg.w1,
+                    w5: agg.w5,
+                    w30: agg.w30,
+                    w15: agg.w15,
+                    w60: agg.w60,
                 })
-                .filter(|r| r.w1 > 0 || r.w5 > 0 || r.w15 > 0 || r.w30 > 0 || r.w60 > 0)
+                .collect()
+        }
+        TierMode::Offline => {
+            get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &intervals, false)
+                .await?
+                .into_iter()
+                .map(|(user_id, agg)| WindowsAggRow {
+                    user_id,
+                    messages: agg.messages,
+                    uniq_messages: agg.uniq_messages,
+                    w1: agg.w1,
+                    w5: agg.w5,
+                    w15: agg.w15,
+                    w30: agg.w30,
+                    w60: agg.w60,
+                })
                 .collect()
         }
     };
@@ -290,124 +314,18 @@ pub async fn get_channel_tiers_month(
         .await
         .unwrap_or_default();
 
-    // Apply bot filter (by user_id or user_login)
-    if !bot_filter.is_empty() {
-        rows_by_user.retain(|uid, _| {
-            if bot_filter.contains(&uid.to_lowercase()) {
-                return false;
-            }
-            if let Some(login) = user_logins.get(uid) {
-                if bot_filter.contains(&login.to_lowercase()) {
-                    return false;
-                }
-            }
-            true
-        });
-    }
+    crate::tiers::filter_bots(&mut rows_by_user, &user_logins, &bot_filter);
 
-    // Per-window ranks/tiers
-    let mut w1_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w5_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w15_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w30_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w60_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-
-    let sort_w = |key: fn(&WindowsAggRow) -> u64,
-                  map: &mut HashMap<String, (u32, &'static str)>,
-                  tier_fn: fn(u32) -> Option<&'static str>,
-                  take_limit: usize| {
-        let mut v: Vec<&WindowsAggRow> = rows_by_user.values().collect();
-        v.sort_by(|a, b| key(b).cmp(&key(a)));
-        for (idx, row) in v.into_iter().take(take_limit).enumerate() {
-            let pos = (idx + 1) as u32;
-            if let Some(t) = tier_fn(pos) {
-                map.insert(row.user_id.clone(), (pos, t));
-            }
-        }
-    };
-
-    let full_len = rows_by_user.len();
-    // Use LT tiers for all windows so tier sizes stay consistent across window lengths.
-    sort_w(|r| r.w1, &mut w1_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w5, &mut w5_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w15, &mut w15_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w30, &mut w30_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w60, &mut w60_ranks, lt_tier_for_pos, full_len);
-
-    let mut included_ids: HashSet<String> = w1_ranks.keys().cloned().collect();
-    included_ids.extend(w5_ranks.keys().cloned());
-    included_ids.extend(w15_ranks.keys().cloned());
-    included_ids.extend(w30_ranks.keys().cloned());
-    included_ids.extend(w60_ranks.keys().cloned());
-
-    let mut user_ids: Vec<String> = included_ids.iter().cloned().collect();
-    user_ids.sort();
-
-    let total_users_all: u64 = rows_by_user.len() as u64;
-    let total_messages_all: u64 = rows_by_user.values().map(|r| r.messages).sum();
-    let total_unique_all: u64 = rows_by_user.values().map(|r| r.uniq_messages).sum();
-
-    let mut entries = Vec::with_capacity(included_ids.len());
-    for user_id in user_ids {
-        if let Some(row) = rows_by_user.get(&user_id) {
-            let w1 = w1_ranks.get(&user_id);
-            let w5 = w5_ranks.get(&user_id);
-            let w15 = w15_ranks.get(&user_id);
-            let w30 = w30_ranks.get(&user_id);
-            let w60 = w60_ranks.get(&user_id);
-            let tier_score = aggregate_tier_score(w1, w5, w15, w30, w60);
-            entries.push(TierEntry {
-                user_id: user_id.clone(),
-                user_login: user_logins.get(&user_id).cloned(),
-                messages: row.messages,
-                unique_messages: row.uniq_messages,
-                windows_1m: row.w1,
-                windows_5m: row.w5,
-                windows_30m: row.w30,
-                windows_15m: row.w15,
-                windows_60m: row.w60,
-                rank_1m: w1.map(|v| v.0),
-                tier_1m: w1.map(|v| v.1.to_owned()),
-                rank_5m: w5.map(|v| v.0),
-                tier_5m: w5.map(|v| v.1.to_owned()),
-                rank_15m: w15.map(|v| v.0),
-                tier_15m: w15.map(|v| v.1.to_owned()),
-                rank_30m: w30.map(|v| v.0),
-                tier_30m: w30.map(|v| v.1.to_owned()),
-                rank_60m: w60.map(|v| v.0),
-                tier_60m: w60.map(|v| v.1.to_owned()),
-                tier_score,
-            });
-        }
-    }
-
-    entries.sort_by(|a, b| {
-        b.tier_score
-            .cmp(&a.tier_score)
-            .then_with(|| b.messages.cmp(&a.messages))
-            .then_with(|| b.unique_messages.cmp(&a.unique_messages))
-            .then_with(|| b.windows_1m.cmp(&a.windows_1m))
-            .then_with(|| b.windows_5m.cmp(&a.windows_5m))
-            .then_with(|| b.windows_15m.cmp(&a.windows_15m))
-            .then_with(|| b.windows_30m.cmp(&a.windows_30m))
-            .then_with(|| b.windows_60m.cmp(&a.windows_60m))
-            .then_with(|| a.user_id.cmp(&b.user_id)) // stable tie-breaker
-    });
-    if entries.len() > RESPONSE_LIMIT {
-        entries.truncate(RESPONSE_LIMIT);
-    }
-    if entries.len() > RESPONSE_LIMIT {
-        entries.truncate(RESPONSE_LIMIT);
-    }
+    let ranked = crate::tiers::rank(rows_by_user, user_logins);
 
     let response = TierResponse {
         year,
         month,
-        timezone: TIER_TIMEZONE,
-        total_users: total_users_all,
-        total_messages: total_messages_all,
-        total_unique_messages: total_unique_all,
-        entries,
+        timezone: crate::tiers::TIMEZONE,
+        total_users: ranked.total_users,
+        total_messages: ranked.total_messages,
+        total_unique_messages: ranked.total_unique_messages,
+        entries: ranked.entries,
     };
 
     spawn_supabase_tiers(
@@ -416,13 +334,13 @@ pub async fn get_channel_tiers_month(
         "month",
         format!("{year:04}{month:02}"),
         mode,
-        total_users_all,
-        total_messages_all,
-        total_unique_all,
+        response.total_users,
+        response.total_messages,
+        response.total_unique_messages,
         &response.entries,
     );
 
-    Ok((cache_header(600), Json(response)))
+    Ok((no_cache_header(), Json(response)))
 }
 
 pub async fn get_channel_tiers_day(
@@ -441,21 +359,16 @@ pub async fn get_channel_tiers_day(
     app.check_opted_out(&channel_id, None)?;
 
     let year: i32 = day_path.year.parse()?;
-    let month: u32 = normalize_month(day_path.month.parse()?)?;
-    let day: u32 = normalize_day(year, month, day_path.day.parse()?)?;
+    let month = normalize_month(day_path.month.parse()?)?;
+    let day = normalize_day(year, month, day_path.day.parse()?)?;
     let yyyymmdd = year * 10000 + (month as i32) * 100 + day as i32;
 
-    let mode = mode_query.mode.unwrap_or(TierMode::All);
+    let mode = mode_query.mode;
     let bot_filter: HashSet<String> = mode_query
         .exclude_bots
-        .as_ref()
-        .map(|s| {
-            s.split(',')
-                .map(|v| v.trim().to_lowercase())
-                .filter(|v| !v.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
+        .iter()
+        .map(|bot| bot.to_lowercase())
+        .collect();
 
     // Determine intervals from Sully for this day. Always try live fetch, fallback to cache.
     let streams = load_sully_streams(&day_path.channel_info.channel, year).await;
@@ -467,40 +380,36 @@ pub async fn get_channel_tiers_day(
 
     let rows = match mode {
         TierMode::All => get_day_windows(&app.db, &channel_id, yyyymmdd).await?,
-        TierMode::Online => get_day_windows_with_ranges(&app.db, &channel_id, yyyymmdd, &intervals, true)
-            .await?
-            .into_iter()
-            .map(|(user_id, agg)| WindowsAggRow {
-                user_id,
-                messages: agg.messages,
-                uniq_messages: agg.uniq_messages,
-                w1: agg.w1,
-                w5: agg.w5,
-                w15: agg.w15,
-                w30: agg.w30,
-                w60: agg.w60,
-            })
-            .collect(),
-        TierMode::Offline => {
-            let online = get_day_windows_with_ranges(&app.db, &channel_id, yyyymmdd, &intervals, true).await?;
-            let all = get_day_windows(&app.db, &channel_id, yyyymmdd).await?;
-            all.into_iter()
-                .map(|row| {
-                    let online_row = online.get(&row.user_id);
-                    WindowsAggRow {
-                        user_id: row.user_id,
-                        messages: row.messages.saturating_sub(online_row.map(|o| o.messages).unwrap_or(0)),
-                        uniq_messages: row
-                            .uniq_messages
-                            .saturating_sub(online_row.map(|o| o.uniq_messages).unwrap_or(0)),
-                        w1: row.w1.saturating_sub(online_row.map(|o| o.w1).unwrap_or(0)),
-                        w5: row.w5.saturating_sub(online_row.map(|o| o.w5).unwrap_or(0)),
-                        w15: row.w15.saturating_sub(online_row.map(|o| o.w15).unwrap_or(0)),
-                        w30: row.w30.saturating_sub(online_row.map(|o| o.w30).unwrap_or(0)),
-                        w60: row.w60.saturating_sub(online_row.map(|o| o.w60).unwrap_or(0)),
-                    }
+        TierMode::Online => {
+            get_day_windows_with_ranges(&app.db, &channel_id, yyyymmdd, &intervals, true)
+                .await?
+                .into_iter()
+                .map(|(user_id, agg)| WindowsAggRow {
+                    user_id,
+                    messages: agg.messages,
+                    uniq_messages: agg.uniq_messages,
+                    w1: agg.w1,
+                    w5: agg.w5,
+                    w15: agg.w15,
+                    w30: agg.w30,
+                    w60: agg.w60,
                 })
-                .filter(|r| r.w1 > 0 || r.w5 > 0 || r.w15 > 0 || r.w30 > 0 || r.w60 > 0)
+                .collect()
+        }
+        TierMode::Offline => {
+            get_day_windows_with_ranges(&app.db, &channel_id, yyyymmdd, &intervals, false)
+                .await?
+                .into_iter()
+                .map(|(user_id, agg)| WindowsAggRow {
+                    user_id,
+                    messages: agg.messages,
+                    uniq_messages: agg.uniq_messages,
+                    w1: agg.w1,
+                    w5: agg.w5,
+                    w15: agg.w15,
+                    w30: agg.w30,
+                    w60: agg.w60,
+                })
                 .collect()
         }
     };
@@ -518,118 +427,19 @@ pub async fn get_channel_tiers_day(
         .await
         .unwrap_or_default();
 
-    // Apply bot filter (by user_id or user_login)
-    if !bot_filter.is_empty() {
-        rows_by_user.retain(|uid, _| {
-            if bot_filter.contains(&uid.to_lowercase()) {
-                return false;
-            }
-            if let Some(login) = user_logins.get(uid) {
-                if bot_filter.contains(&login.to_lowercase()) {
-                    return false;
-                }
-            }
-            true
-        });
-    }
+    crate::tiers::filter_bots(&mut rows_by_user, &user_logins, &bot_filter);
 
-    // Per-window ranks/tiers
-    let mut w1_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w5_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w15_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w30_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w60_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-
-    let sort_w = |key: fn(&WindowsAggRow) -> u64,
-                  map: &mut HashMap<String, (u32, &'static str)>,
-                  tier_fn: fn(u32) -> Option<&'static str>,
-                  take_limit: usize| {
-        let mut v: Vec<&WindowsAggRow> = rows_by_user.values().collect();
-        v.sort_by(|a, b| key(b).cmp(&key(a)));
-        for (idx, row) in v.into_iter().take(take_limit).enumerate() {
-            let pos = (idx + 1) as u32;
-            if let Some(t) = tier_fn(pos) {
-                map.insert(row.user_id.clone(), (pos, t));
-            }
-        }
-    };
-
-    let full_len = rows_by_user.len();
-    sort_w(|r| r.w1, &mut w1_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w5, &mut w5_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w15, &mut w15_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w30, &mut w30_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w60, &mut w60_ranks, lt_tier_for_pos, full_len);
-
-    let mut included_ids: HashSet<String> = w1_ranks.keys().cloned().collect();
-    included_ids.extend(w5_ranks.keys().cloned());
-    included_ids.extend(w15_ranks.keys().cloned());
-    included_ids.extend(w30_ranks.keys().cloned());
-    included_ids.extend(w60_ranks.keys().cloned());
-
-    let mut user_ids: Vec<String> = included_ids.iter().cloned().collect();
-    user_ids.sort();
-
-    let total_users_all: u64 = rows_by_user.len() as u64;
-    let total_messages_all: u64 = rows_by_user.values().map(|r| r.messages).sum();
-    let total_unique_all: u64 = rows_by_user.values().map(|r| r.uniq_messages).sum();
-
-    let mut entries = Vec::with_capacity(included_ids.len());
-    for user_id in user_ids {
-        if let Some(row) = rows_by_user.get(&user_id) {
-            let w1 = w1_ranks.get(&user_id);
-            let w5 = w5_ranks.get(&user_id);
-            let w15 = w15_ranks.get(&user_id);
-            let w30 = w30_ranks.get(&user_id);
-            let w60 = w60_ranks.get(&user_id);
-            let tier_score = aggregate_tier_score(w1, w5, w15, w30, w60);
-            entries.push(TierEntry {
-                user_id: user_id.clone(),
-                user_login: user_logins.get(&user_id).cloned(),
-                messages: row.messages,
-                unique_messages: row.uniq_messages,
-                windows_1m: row.w1,
-                windows_5m: row.w5,
-                windows_30m: row.w30,
-                windows_15m: row.w15,
-                windows_60m: row.w60,
-                rank_1m: w1.map(|v| v.0),
-                tier_1m: w1.map(|v| v.1.to_owned()),
-                rank_5m: w5.map(|v| v.0),
-                tier_5m: w5.map(|v| v.1.to_owned()),
-                rank_15m: w15.map(|v| v.0),
-                tier_15m: w15.map(|v| v.1.to_owned()),
-                rank_30m: w30.map(|v| v.0),
-                tier_30m: w30.map(|v| v.1.to_owned()),
-                rank_60m: w60.map(|v| v.0),
-                tier_60m: w60.map(|v| v.1.to_owned()),
-                tier_score,
-            });
-        }
-    }
-
-    entries.sort_by(|a, b| {
-        b.tier_score
-            .cmp(&a.tier_score)
-            .then_with(|| b.messages.cmp(&a.messages))
-            .then_with(|| b.unique_messages.cmp(&a.unique_messages))
-            .then_with(|| b.windows_1m.cmp(&a.windows_1m))
-            .then_with(|| b.windows_5m.cmp(&a.windows_5m))
-            .then_with(|| b.windows_15m.cmp(&a.windows_15m))
-            .then_with(|| b.windows_30m.cmp(&a.windows_30m))
-            .then_with(|| b.windows_60m.cmp(&a.windows_60m))
-            .then_with(|| a.user_id.cmp(&b.user_id)) // stable tie-breaker
-    });
+    let ranked = crate::tiers::rank(rows_by_user, user_logins);
 
     let response = TierDayResponse {
         year,
         month,
         day,
-        timezone: TIER_TIMEZONE,
-        total_users: total_users_all,
-        total_messages: total_messages_all,
-        total_unique_messages: total_unique_all,
-        entries,
+        timezone: crate::tiers::TIMEZONE,
+        total_users: ranked.total_users,
+        total_messages: ranked.total_messages,
+        total_unique_messages: ranked.total_unique_messages,
+        entries: ranked.entries,
     };
 
     spawn_supabase_tiers(
@@ -638,13 +448,13 @@ pub async fn get_channel_tiers_day(
         "day",
         format!("{year:04}{month:02}{day:02}"),
         mode,
-        total_users_all,
-        total_messages_all,
-        total_unique_all,
+        response.total_users,
+        response.total_messages,
+        response.total_unique_messages,
         &response.entries,
     );
 
-    Ok((cache_header(600), Json(response)))
+    Ok((no_cache_header(), Json(response)))
 }
 
 pub async fn get_channel_tiers_year(
@@ -653,29 +463,28 @@ pub async fn get_channel_tiers_year(
     Query(mode_query): Query<TierModeQuery>,
 ) -> Result<impl IntoApiResponse> {
     let channel_id = match year_path.channel_info.channel_id_type {
-        ChannelIdType::Name => app.get_user_id_by_name(&year_path.channel_info.channel).await?,
+        ChannelIdType::Name => {
+            app.get_user_id_by_name(&year_path.channel_info.channel)
+                .await?
+        }
         ChannelIdType::Id => year_path.channel_info.channel.clone(),
     };
 
     app.check_opted_out(&channel_id, None)?;
 
     let year: i32 = year_path.year.parse()?;
-    let mode = mode_query.mode.unwrap_or(TierMode::All);
+    let mode = mode_query.mode;
     let bot_filter: HashSet<String> = mode_query
         .exclude_bots
-        .as_ref()
-        .map(|s| {
-            s.split(',')
-                .map(|v| v.trim().to_lowercase())
-                .filter(|v| !v.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
+        .iter()
+        .map(|bot| bot.to_lowercase())
+        .collect();
 
     // Fetch sully streams once for all months (for online/offline mode) - prefer live fetch.
-    let streams: Option<Vec<SullyStreamEntry>> = load_sully_streams(&year_path.channel_info.channel, year)
-        .await
-        .map(|resp| resp.streams);
+    let streams: Option<Vec<SullyStreamEntry>> =
+        load_sully_streams(&year_path.channel_info.channel, year)
+            .await
+            .map(|resp| resp.streams);
 
     // For each month aggregate windows
     let mut rows_by_user: HashMap<String, WindowsAggRow> = HashMap::new();
@@ -688,40 +497,36 @@ pub async fn get_channel_tiers_year(
 
         let month_rows: Vec<WindowsAggRow> = match mode {
             TierMode::All => get_month_windows(&app.db, &channel_id, yyyymm).await?,
-            TierMode::Online => get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &month_intervals, true)
-                .await?
-                .into_iter()
-                .map(|(user_id, agg)| WindowsAggRow {
-                    user_id,
-                    messages: agg.messages,
-                    uniq_messages: agg.uniq_messages,
-                    w1: agg.w1,
-                    w5: agg.w5,
-                    w15: agg.w15,
-                    w30: agg.w30,
-                    w60: agg.w60,
-                })
-                .collect(),
-            TierMode::Offline => {
-                let online = get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &month_intervals, true).await?;
-                let all = get_month_windows(&app.db, &channel_id, yyyymm).await?;
-                all.into_iter()
-                    .map(|row| {
-                        let online_row = online.get(&row.user_id);
-                        WindowsAggRow {
-                            user_id: row.user_id,
-                            messages: row.messages.saturating_sub(online_row.map(|o| o.messages).unwrap_or(0)),
-                            uniq_messages: row
-                                .uniq_messages
-                                .saturating_sub(online_row.map(|o| o.uniq_messages).unwrap_or(0)),
-                            w1: row.w1.saturating_sub(online_row.map(|o| o.w1).unwrap_or(0)),
-                            w5: row.w5.saturating_sub(online_row.map(|o| o.w5).unwrap_or(0)),
-                            w15: row.w15.saturating_sub(online_row.map(|o| o.w15).unwrap_or(0)),
-                            w30: row.w30.saturating_sub(online_row.map(|o| o.w30).unwrap_or(0)),
-                            w60: row.w60.saturating_sub(online_row.map(|o| o.w60).unwrap_or(0)),
-                        }
+            TierMode::Online => {
+                get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &month_intervals, true)
+                    .await?
+                    .into_iter()
+                    .map(|(user_id, agg)| WindowsAggRow {
+                        user_id,
+                        messages: agg.messages,
+                        uniq_messages: agg.uniq_messages,
+                        w1: agg.w1,
+                        w5: agg.w5,
+                        w15: agg.w15,
+                        w30: agg.w30,
+                        w60: agg.w60,
                     })
-                    .filter(|r| r.w1 > 0 || r.w5 > 0 || r.w15 > 0 || r.w30 > 0 || r.w60 > 0)
+                    .collect()
+            }
+            TierMode::Offline => {
+                get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &month_intervals, false)
+                    .await?
+                    .into_iter()
+                    .map(|(user_id, agg)| WindowsAggRow {
+                        user_id,
+                        messages: agg.messages,
+                        uniq_messages: agg.uniq_messages,
+                        w1: agg.w1,
+                        w5: agg.w5,
+                        w15: agg.w15,
+                        w30: agg.w30,
+                        w60: agg.w60,
+                    })
                     .collect()
             }
         };
@@ -750,119 +555,17 @@ pub async fn get_channel_tiers_year(
         .await
         .unwrap_or_default();
 
-    // Apply bot filter (by user_id or user_login)
-    if !bot_filter.is_empty() {
-        rows_by_user.retain(|uid, _| {
-            if bot_filter.contains(&uid.to_lowercase()) {
-                return false;
-            }
-            if let Some(login) = user_logins.get(uid) {
-                if bot_filter.contains(&login.to_lowercase()) {
-                    return false;
-                }
-            }
-            true
-        });
-    }
+    crate::tiers::filter_bots(&mut rows_by_user, &user_logins, &bot_filter);
 
-    // Per-window ranks/tiers on aggregated rows
-    let mut w1_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w5_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w15_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w30_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-    let mut w60_ranks: HashMap<String, (u32, &'static str)> = HashMap::new();
-
-    let sort_w = |key: fn(&WindowsAggRow) -> u64,
-                  map: &mut HashMap<String, (u32, &'static str)>,
-                  tier_fn: fn(u32) -> Option<&'static str>,
-                  take_limit: usize| {
-        let mut v: Vec<&WindowsAggRow> = rows_by_user.values().collect();
-        v.sort_by(|a, b| key(b).cmp(&key(a)));
-        for (idx, row) in v.into_iter().take(take_limit).enumerate() {
-            let pos = (idx + 1) as u32;
-            if let Some(t) = tier_fn(pos) {
-                map.insert(row.user_id.clone(), (pos, t));
-            }
-        }
-    };
-
-    let full_len = rows_by_user.len();
-    sort_w(|r| r.w1, &mut w1_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w5, &mut w5_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w15, &mut w15_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w30, &mut w30_ranks, lt_tier_for_pos, full_len);
-    sort_w(|r| r.w60, &mut w60_ranks, lt_tier_for_pos, full_len);
-
-    let mut included_ids: HashSet<String> = w1_ranks.keys().cloned().collect();
-    included_ids.extend(w5_ranks.keys().cloned());
-    included_ids.extend(w15_ranks.keys().cloned());
-    included_ids.extend(w30_ranks.keys().cloned());
-    included_ids.extend(w60_ranks.keys().cloned());
-
-    let mut user_ids: Vec<String> = included_ids.iter().cloned().collect();
-    user_ids.sort();
-
-    let total_users_all: u64 = rows_by_user.len() as u64;
-    let total_messages_all: u64 = rows_by_user.values().map(|r| r.messages).sum();
-    let total_unique_all: u64 = rows_by_user.values().map(|r| r.uniq_messages).sum();
-
-    let mut entries = Vec::with_capacity(included_ids.len());
-    for user_id in user_ids {
-        if let Some(row) = rows_by_user.get(&user_id) {
-            let w1 = w1_ranks.get(&user_id);
-            let w5 = w5_ranks.get(&user_id);
-            let w15 = w15_ranks.get(&user_id);
-            let w30 = w30_ranks.get(&user_id);
-            let w60 = w60_ranks.get(&user_id);
-            let tier_score = aggregate_tier_score(w1, w5, w15, w30, w60);
-            entries.push(TierEntry {
-                user_id: user_id.clone(),
-                user_login: user_logins.get(&user_id).cloned(),
-                messages: row.messages,
-                unique_messages: row.uniq_messages,
-                windows_1m: row.w1,
-                windows_5m: row.w5,
-                windows_30m: row.w30,
-                windows_15m: row.w15,
-                windows_60m: row.w60,
-                rank_1m: w1.map(|v| v.0),
-                tier_1m: w1.map(|v| v.1.to_owned()),
-                rank_5m: w5.map(|v| v.0),
-                tier_5m: w5.map(|v| v.1.to_owned()),
-                rank_15m: w15.map(|v| v.0),
-                tier_15m: w15.map(|v| v.1.to_owned()),
-                rank_30m: w30.map(|v| v.0),
-                tier_30m: w30.map(|v| v.1.to_owned()),
-                rank_60m: w60.map(|v| v.0),
-                tier_60m: w60.map(|v| v.1.to_owned()),
-                tier_score,
-            });
-        }
-    }
-
-    entries.sort_by(|a, b| {
-        b.tier_score
-            .cmp(&a.tier_score)
-            .then_with(|| b.messages.cmp(&a.messages))
-            .then_with(|| b.unique_messages.cmp(&a.unique_messages))
-            .then_with(|| b.windows_1m.cmp(&a.windows_1m))
-            .then_with(|| b.windows_5m.cmp(&a.windows_5m))
-            .then_with(|| b.windows_15m.cmp(&a.windows_15m))
-            .then_with(|| b.windows_30m.cmp(&a.windows_30m))
-            .then_with(|| b.windows_60m.cmp(&a.windows_60m))
-            .then_with(|| a.user_id.cmp(&b.user_id))
-    });
-    if entries.len() > RESPONSE_LIMIT {
-        entries.truncate(RESPONSE_LIMIT);
-    }
+    let ranked = crate::tiers::rank(rows_by_user, user_logins);
 
     let response = TierYearResponse {
         year,
-        timezone: TIER_TIMEZONE,
-        total_users: total_users_all,
-        total_messages: total_messages_all,
-        total_unique_messages: total_unique_all,
-        entries,
+        timezone: crate::tiers::TIMEZONE,
+        total_users: ranked.total_users,
+        total_messages: ranked.total_messages,
+        total_unique_messages: ranked.total_unique_messages,
+        entries: ranked.entries,
     };
 
     spawn_supabase_tiers(
@@ -871,13 +574,13 @@ pub async fn get_channel_tiers_year(
         "year",
         format!("{year:04}"),
         mode,
-        total_users_all,
-        total_messages_all,
-        total_unique_all,
+        response.total_users,
+        response.total_messages,
+        response.total_unique_messages,
         &response.entries,
     );
 
-    Ok((cache_header(600), Json(response)))
+    Ok((no_cache_header(), Json(response)))
 }
 
 pub async fn get_sully_streams(
@@ -885,30 +588,28 @@ pub async fn get_sully_streams(
 ) -> Result<impl IntoApiResponse> {
     // Prefer live fetch, log failures, fall back to cache.
     match build_http_client() {
-        Ok(http) => {
-            match fetch_sully_id(&http, &channel).await {
-                Ok(internal_id) => match fetch_sully_streams(&http, &internal_id, year).await {
-                    Ok((total, data)) => {
-                        let response = SullyStreamsResponse {
-                            channel: channel.clone(),
-                            year,
-                            total,
-                            streams: data.clone(),
-                        };
-                        let _ = write_sully_cache(&channel, year, &response);
-                        return Ok((cache_header(600), Json(response)));
-                    }
-                    Err(e) => error!(
-                        "sully endpoint: fetch streams failed channel={} year={} err={:?}",
-                        channel, year, e
-                    ),
-                },
+        Ok(http) => match fetch_sully_id(&http, &channel).await {
+            Ok(internal_id) => match fetch_sully_streams(&http, &internal_id, year).await {
+                Ok((total, data)) => {
+                    let response = SullyStreamsResponse {
+                        channel: channel.clone(),
+                        year,
+                        total,
+                        streams: data.clone(),
+                    };
+                    let _ = write_sully_cache(&channel, year, &response);
+                    return Ok((cache_header(600), Json(response)));
+                }
                 Err(e) => error!(
-                    "sully endpoint: fetch internal_id failed channel={} err={:?}",
-                    channel, e
+                    "sully endpoint: fetch streams failed channel={} year={} err={:?}",
+                    channel, year, e
                 ),
-            }
-        }
+            },
+            Err(e) => error!(
+                "sully endpoint: fetch internal_id failed channel={} err={:?}",
+                channel, e
+            ),
+        },
         Err(e) => {
             error!("sully endpoint: build_http_client failed err={:?}", e);
         }
@@ -937,10 +638,9 @@ pub async fn get_channel_logs_by_date(
     };
 
     let LogsPathDate { year, month, day } = channel_log_params.date;
-
     let year: i32 = year.parse()?;
-    let month: u32 = normalize_month(month.parse()?)?;
-    let day: u32 = day.parse()?;
+    let month = normalize_month(month.parse()?)?;
+    let day = normalize_day(year, month, day.parse()?)?;
 
     let from = NaiveDate::from_ymd_opt(year, month, day)
         .ok_or_else(|| Error::InvalidParam("Invalid date".to_owned()))?
@@ -968,11 +668,8 @@ async fn get_channel_logs_inner(
         stream,
     };
 
-    let cache = if Utc::now() < range.1 {
-        no_cache_header()
-    } else {
-        cache_header(36000)
-    };
+    // Historical log rows can be withdrawn by an opt-out mutation.
+    let cache = no_cache_header();
 
     Ok((cache, logs))
 }
@@ -1023,7 +720,7 @@ pub async fn get_user_logs_by_date(
     app.check_opted_out(&channel_id, Some(&user_id))?;
 
     let year: i32 = user_logs_date.year.parse()?;
-    let month: u32 = normalize_month(user_logs_date.month.parse()?)?;
+    let month = normalize_month(user_logs_date.month.parse()?)?;
 
     let from = NaiveDate::from_ymd_opt(year, month, 1)
         .ok_or_else(|| Error::InvalidParam("Invalid date".to_owned()))?
@@ -1058,11 +755,8 @@ async fn get_user_logs_inner(
         response_type: logs_params.response_type(),
     };
 
-    let cache = if Utc::now() < range.1 {
-        no_cache_header()
-    } else {
-        cache_header(36000)
-    };
+    // Historical log rows can be withdrawn by an opt-out mutation.
+    let cache = no_cache_header();
 
     Ok((cache, logs))
 }
@@ -1071,6 +765,9 @@ pub async fn list_available_logs(
     Query(AvailableLogsParams { user, channel }): Query<AvailableLogsParams>,
     app: State<App>,
 ) -> Result<impl IntoApiResponse> {
+    let channel = channel.ok_or_else(|| {
+        Error::InvalidParam("Specify query parameter: channel or channelid".to_owned())
+    })?;
     let channel_id = match channel {
         ChannelParam::ChannelId(id) => id,
         ChannelParam::Channel(name) => app.get_user_id_by_name(&name).await?,
@@ -1089,7 +786,7 @@ pub async fn list_available_logs(
     };
 
     if !available_logs.is_empty() {
-        Ok((cache_header(600), Json(AvailableLogs { available_logs })))
+        Ok((no_cache_header(), Json(AvailableLogs { available_logs })))
     } else {
         Err(Error::NotFound)
     }
@@ -1107,6 +804,7 @@ pub async fn random_channel_line(
         ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
         ChannelIdType::Id => channel,
     };
+    app.check_opted_out(&channel_id, None)?;
 
     let random_line = read_random_channel_line(&app.db, &channel_id).await?;
     let stream = LogsStream::new_provided(vec![random_line])?;
@@ -1167,7 +865,7 @@ pub async fn get_user_name_history(
     app: State<App>,
     Path(UserNameHistoryParam { user_id }): Path<UserNameHistoryParam>,
 ) -> Result<impl IntoApiResponse> {
-    app.check_opted_out(&user_id, None)?;
+    app.check_user_opted_out(&user_id)?;
 
     let names = db::get_user_name_history(&app.db, &user_id).await?;
 
@@ -1240,20 +938,6 @@ fn normalize_day(year: i32, month: u32, day_raw: i32) -> Result<u32> {
     }
 }
 
-fn lt_tier_for_pos(pos: u32) -> Option<&'static str> {
-    match pos {
-        1 => Some("HT1"),
-        2..=4 => Some("LT1"),
-        5..=10 => Some("HT2"),
-        11..=20 => Some("LT2"),
-        21..=40 => Some("HT3"),
-        41..=80 => Some("LT3"),
-        81..=140 => Some("HT4"),
-        141..=200 => Some("LT4"),
-        _ => Some("LT5"),
-    }
-}
-
 fn tier_mode_str(mode: TierMode) -> &'static str {
     match mode {
         TierMode::All => "all",
@@ -1273,8 +957,16 @@ fn spawn_supabase_tiers(
     total_unique: u64,
     entries: &[TierEntry],
 ) {
-    let Some(url) = app.config.supabase_url.clone() else { return };
-    let Some(service_key) = app.config.supabase_service_key.clone() else { return };
+    if !app.config.enable_tier_snapshots {
+        return;
+    }
+
+    let Some(url) = app.config.supabase_url.clone() else {
+        return;
+    };
+    let Some(service_key) = app.config.supabase_service_key.clone() else {
+        return;
+    };
 
     let p_total_users = match i32::try_from(total_users) {
         Ok(v) => v,
@@ -1286,14 +978,20 @@ fn spawn_supabase_tiers(
     let p_total_messages = match i32::try_from(total_messages) {
         Ok(v) => v,
         Err(_) => {
-            warn!("supabase skip: total_messages overflow ({}).", total_messages);
+            warn!(
+                "supabase skip: total_messages overflow ({}).",
+                total_messages
+            );
             return;
         }
     };
     let p_total_unique_messages = match i32::try_from(total_unique) {
         Ok(v) => v,
         Err(_) => {
-            warn!("supabase skip: total_unique_messages overflow ({}).", total_unique);
+            warn!(
+                "supabase skip: total_unique_messages overflow ({}).",
+                total_unique
+            );
             return;
         }
     };
@@ -1323,38 +1021,6 @@ fn spawn_supabase_tiers(
             warn!("supabase upsert failed: {:?}", e);
         }
     });
-}
-
-fn tier_value(tier: &str) -> u8 {
-    match tier {
-        "HT1" => 10,
-        "LT1" => 9,
-        "HT2" => 8,
-        "LT2" => 7,
-        "HT3" => 6,
-        "LT3" => 5,
-        "HT4" => 4,
-        "LT4" => 3,
-        "HT5" => 2,
-        "LT5" => 1,
-        _ => 0,
-    }
-}
-
-fn aggregate_tier_score(
-    w1: Option<&(u32, &'static str)>,
-    w5: Option<&(u32, &'static str)>,
-    w15: Option<&(u32, &'static str)>,
-    w30: Option<&(u32, &'static str)>,
-    w60: Option<&(u32, &'static str)>,
-) -> u32 {
-    let mut score: u32 = 0;
-    for t in [w1, w5, w15, w30, w60] {
-        if let Some((_, tier)) = t {
-            score += tier_value(tier) as u32;
-        }
-    }
-    score
 }
 
 #[derive(Deserialize)]
@@ -1443,9 +1109,8 @@ async fn fetch_sully_streams(
     let mut offset: u32 = 0;
     let limit: u32 = 2000;
     let mut streams = Vec::new();
-    let mut total: u32 = 0;
 
-    loop {
+    let total = loop {
         let url = format!(
             "https://sullygnome.com/api/tables/channeltables/streams/{year}/{internal_id}/%20/1/1/desc/{offset}/{limit}"
         );
@@ -1473,14 +1138,14 @@ async fn fetch_sully_streams(
             );
             Error::Internal
         })?;
-        total = parsed.total;
+        let total = parsed.total;
         let count_added = parsed.streams.len() as u32;
         streams.extend(parsed.streams);
         offset += limit;
         if offset >= total || count_added == 0 {
-            break;
+            break total;
         }
-    }
+    };
 
     Ok((total, streams))
 }
@@ -1530,13 +1195,29 @@ fn parse_sully_body(channel: &str, year: i32, body: &str) -> Result<SullyStreams
                         .get("streamId")
                         .and_then(|v| v.as_i64())
                         .map(|v| v.to_string())
-                        .or_else(|| row.get("streamId").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                        .or_else(|| {
+                            row.get("streamId")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                        })
                         .unwrap_or_default(),
-                    start_iso: row.get("startDateTime").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    start_human: row.get("starttime").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    end_human: row.get("endtime").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    start_iso: row
+                        .get("startDateTime")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    start_human: row
+                        .get("starttime")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    end_human: row
+                        .get("endtime")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     length_minutes: len_minutes,
-                    gamesplayed: row.get("gamesplayed").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    gamesplayed: row
+                        .get("gamesplayed")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
         }
@@ -1562,11 +1243,7 @@ fn read_sully_cache(channel: &str, year: i32) -> Option<SullyStreamsResponse> {
     parse_sully_body(channel, year, &data).ok()
 }
 
-fn write_sully_cache(
-    channel: &str,
-    year: i32,
-    resp: &SullyStreamsResponse,
-) -> std::io::Result<()> {
+fn write_sully_cache(channel: &str, year: i32, resp: &SullyStreamsResponse) -> std::io::Result<()> {
     let path = sully_cache_path(channel, year);
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
@@ -1575,29 +1252,23 @@ fn write_sully_cache(
     fs::write(path, data)
 }
 
-fn intervals_for_month(
-    year: i32,
-    month: u32,
-    streams: &[SullyStreamEntry],
-) -> Vec<(i64, i64)> {
+fn intervals_for_month(year: i32, month: u32, streams: &[SullyStreamEntry]) -> Vec<(i64, i64)> {
     let moscow = FixedOffset::east_opt(3 * 3600).unwrap();
     let month_start = NaiveDate::from_ymd_opt(year, month, 1)
         .unwrap()
         .and_time(NaiveTime::default())
         .and_local_timezone(moscow)
         .unwrap();
-    let month_end = month_start
-        .checked_add_months(Months::new(1))
-        .unwrap()
-        .checked_sub_signed(chrono::Duration::milliseconds(1))
-        .unwrap();
+    let month_end = month_start.checked_add_months(Months::new(1)).unwrap();
 
     streams
         .iter()
         .filter_map(|s| {
             let start_iso = s.start_iso.as_ref()?;
             let length = s.length_minutes?;
-            let start = DateTime::parse_from_rfc3339(start_iso).ok()?.with_timezone(&moscow);
+            let start = DateTime::parse_from_rfc3339(start_iso)
+                .ok()?
+                .with_timezone(&moscow);
             let end = start + chrono::Duration::minutes(length as i64);
             let from = std::cmp::max(start, month_start);
             let to = std::cmp::min(end, month_end);
@@ -1622,18 +1293,16 @@ fn intervals_for_day(
         .and_time(NaiveTime::default())
         .and_local_timezone(moscow)
         .unwrap();
-    let day_end = day_start
-        .checked_add_days(Days::new(1))
-        .unwrap()
-        .checked_sub_signed(chrono::Duration::milliseconds(1))
-        .unwrap();
+    let day_end = day_start.checked_add_days(Days::new(1)).unwrap();
 
     streams
         .iter()
         .filter_map(|s| {
             let start_iso = s.start_iso.as_ref()?;
             let length = s.length_minutes?;
-            let start = DateTime::parse_from_rfc3339(start_iso).ok()?.with_timezone(&moscow);
+            let start = DateTime::parse_from_rfc3339(start_iso)
+                .ok()?
+                .with_timezone(&moscow);
             let end = start + chrono::Duration::minutes(length as i64);
             let from = std::cmp::max(start, day_start);
             let to = std::cmp::min(end, day_end);

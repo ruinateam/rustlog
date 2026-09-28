@@ -8,5 +8,6 @@
   "clientID": "id",
   "clientSecret": "secret",
   "admins": [],
-  "optOut": {}
+  "optOut": {},
+  "enableTierSnapshots": false
 }

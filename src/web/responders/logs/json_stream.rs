@@ -18,6 +18,7 @@ use tracing::error;
 
 const HEADER: &str = r#"{"messages":["#;
 const FOOTER: &str = r#"]}"#;
+const EMPTY_RESPONSE: &[u8] = br#"{"messages":[]}"#;
 /// Rough estimation of how big a single message is in JSON format
 const JSON_MESSAGE_SIZE: usize = 1024;
 const CHUNK_SIZE: usize = 3000;
@@ -118,14 +119,31 @@ impl Stream for JsonLogsStream {
             },
             Poll::Ready(None) => {
                 self.is_end = true;
-                // No lines were retrieved
+                // JSON consumers must receive a valid empty document, not an empty body.
                 if self.is_start {
-                    Poll::Ready(None)
+                    Poll::Ready(Some(Ok(EMPTY_RESPONSE.to_vec())))
                 } else {
                     Poll::Ready(Some(Ok(FOOTER.as_bytes().to_vec())))
                 }
             }
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{JsonLogsStream, JsonResponseType};
+    use crate::logs::stream::LogsStream;
+    use futures::{executor::block_on, StreamExt};
+
+    #[test]
+    fn empty_stream_is_a_valid_json_document() {
+        let mut stream = JsonLogsStream::new(LogsStream::Provided(None), JsonResponseType::Basic);
+
+        let body = block_on(stream.next()).unwrap().unwrap();
+
+        assert_eq!(body, br#"{"messages":[]}"#);
+        assert!(block_on(stream.next()).is_none());
     }
 }
