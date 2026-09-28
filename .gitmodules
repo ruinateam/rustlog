@@ -1,4 +1,4 @@
 [submodule "web"]
 	path = web
-	url = https://github.com/Linaryx/rustlog-frontend.git
-	branch = frontend-only-new
+	url = https://github.com/ruinateam/rustlog-frontend.git
+	branch = main
