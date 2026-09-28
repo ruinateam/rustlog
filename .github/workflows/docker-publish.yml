@@ -31,17 +31,8 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.94
-        with:
-          components: rustfmt
-
-      - name: Check Rust formatting
-        run: cargo fmt -- --check
-
-      - name: Check and test Rust
-        run: cargo test
-
+      # rust-embed reads web/dist at compile time, so the frontend build must
+      # run before any cargo command.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -56,6 +47,17 @@ jobs:
           yarn install --frozen-lockfile --ignore-optional
           yarn typecheck
           yarn build
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.94
+        with:
+          components: rustfmt
+
+      - name: Check Rust formatting
+        run: cargo fmt -- --check
+
+      - name: Check and test Rust
+        run: cargo test
 
   build-push:
     runs-on: ubuntu-latest
