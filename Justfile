@@ -8,8 +8,8 @@ _default:
 run *args: db-up
     cargo run -- {{ args }}
 
-# Run formatting, lint and test checks
-check: fmt-check clippy test
+# Run the same checks as CI
+check: fmt-check clippy test deny
 
 # Format the code
 fmt:
@@ -25,7 +25,11 @@ clippy:
 
 # Run the tests
 test *args:
-    cargo test {{ args }}
+    cargo nextest run {{ args }}
+
+# Audit dependencies for advisories, licenses and banned crates
+deny:
+    cargo deny check
 
 # Build the web frontend into web/dist
 web-build:

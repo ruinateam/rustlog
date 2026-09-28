@@ -45,9 +45,9 @@ Docker поднимает ClickHouse `26.5.6.64` с healthcheck-ом, монти
 Требования для сборки:
 
 - [rustup](https://rustup.rs): нужная версия Rust ставится автоматически из `rust-toolchain.toml`;
-- [just](https://just.systems) (`cargo install --locked just`);
+- [just](https://just.systems), [cargo-nextest](https://nexte.st) и [cargo-deny](https://embarkstudios.github.io/cargo-deny/) (`cargo install --locked just cargo-nextest cargo-deny`);
 - Docker с Compose, чтобы поднимать локальный ClickHouse;
-- Node.js 18+ и yarn (`corepack enable`), только для сборки веб-интерфейса.
+- Node.js 24+ и yarn (`corepack enable`), только для сборки веб-интерфейса.
 
 Все частые команды собраны в `Justfile`, их список выводит `just`:
 
@@ -65,7 +65,7 @@ just build
 Если вы планируете отправлять изменения, запустите те же проверки, что и CI:
 
 ```bash
-# Форматирование, clippy и тесты бэкенда
+# Форматирование, clippy, тесты и аудит зависимостей бэкенда
 just check
 
 # Проверка типов веб-интерфейса
@@ -154,9 +154,16 @@ Tiers отдаётся по эндпоинту `/{channel_id_type}/{channel}/tie
 Перенос старых justlog-файлов и правила opt-out при импорте описаны в [MIGRATION.md](./docs/MIGRATION.md).
 
 ## CI
-На отправку изменений в `main` ветку, а также на любой PR, запускается задача на проверку форматирования, проверку тестов, типов и т.д.
+Workflow [`ci.yml`](.github/workflows/ci.yml) запускается на PR, отправку изменений в `main` и теги `v*.*.*`. Проверки идут параллельными задачами:
 
-На отправку изменений вне PR запускается сборка проекта и публикация мультиархитектурного образа в [GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+- форматирование и clippy;
+- тесты через cargo-nextest;
+- аудит зависимостей через cargo-deny (уязвимости, лицензии, источники, настройки в [`deny.toml`](deny.toml));
+- проверка типов и сборка веб-интерфейса, затем проверка бэкенда со встроенным веб-интерфейсом.
+
+Docker-образ собирается только после успешных проверок. На PR он собирается для `linux/amd64` без публикации. На `main` и теги мультиархитектурный образ с SBOM и provenance публикуется в [GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry) с тегами `main`, `sha-<commit>`, а для релизов `X.Y.Z` и `X.Y`.
+
+Dependabot раз в неделю предлагает обновления Cargo-зависимостей и GitHub Actions.
 
 ## Лицензия
 
