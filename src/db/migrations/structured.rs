@@ -12,7 +12,8 @@ use std::{
 use tokio::sync::Semaphore;
 use tracing::{error, info};
 
-const INSERT_BATCH_SIZE: u64 = 10_000_000;
+// Keep structure migrations bounded so they do not overwhelm ClickHouse or the host.
+const INSERT_BATCH_SIZE: u64 = 200_000;
 
 pub struct StructuredMigration<'a> {
     pub db_name: &'a str,
@@ -83,7 +84,7 @@ ORDER BY (channel_id, user_id, timestamp)
         );
 
         let i = Arc::new(AtomicU64::new(1));
-        let semaphore = Arc::new(Semaphore::new(4));
+        let semaphore = Arc::new(Semaphore::new(2));
 
         let started_at = Instant::now();
 
@@ -131,10 +132,10 @@ async fn migrate_partition(
     info!("Migrating partition {partition}");
 
     let mut inserter = db
-        .inserter(MESSAGES_STRUCTURED_TABLE)?
+        .inserter::<StructuredMessage<'static>>(MESSAGES_STRUCTURED_TABLE)
         .with_timeouts(
-            Some(Duration::from_secs(30)),
-            Some(Duration::from_secs(180)),
+            Some(Duration::from_secs(60)),
+            Some(Duration::from_secs(300)),
         )
         .with_max_rows(INSERT_BATCH_SIZE)
         .with_period(Some(Duration::from_secs(15)));
@@ -142,17 +143,20 @@ async fn migrate_partition(
     let mut cursor = db
         .query("SELECT * FROM message WHERE toYYYYMM(timestamp) = ?")
         .bind(&partition)
-        .fetch::<UnstructuredMessage>()?;
+        .fetch::<UnstructuredMessage>()
+        .with_context(|| format!("Could not fetch messages for partition {partition}"))?;
 
     while let Some(unstructured_msg) = cursor.next().await? {
         match StructuredMessage::from_unstructured(&unstructured_msg) {
             Ok(msg) => {
-                // This is safe because despite the function signature,
-                // `inserter.write` only uses the value for serialization at the time of the method call, and not later
-                let msg: StructuredMessage<'static> = unsafe { std::mem::transmute(msg) };
-                inserter.write(&msg).context("Failed to write message")?;
+                inserter.write(&msg).await.with_context(|| {
+                    format!("Could not write message for partition {partition}")
+                })?;
 
-                let stats = inserter.commit().await.context("Could not commit")?;
+                let stats = inserter
+                    .commit()
+                    .await
+                    .with_context(|| format!("Could not commit batch for partition {partition}"))?;
                 if stats.rows > 0 {
                     info!(
                         "Inserted {} messages from partition {partition}",
@@ -172,7 +176,10 @@ async fn migrate_partition(
         }
     }
 
-    inserter.end().await?;
+    inserter
+        .end()
+        .await
+        .with_context(|| format!("Could not finalize migration for partition {partition}"))?;
     info!("Processed partition {partition}");
 
     Ok(())

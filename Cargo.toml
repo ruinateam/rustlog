@@ -8,13 +8,14 @@ aide = { version = "0.15.0", features = [
     "axum",
     "axum-json",
     "axum-query",
+    "axum-ws",
     "scalar",
 ] }
 anyhow = "1.0.75"
-axum = { version = "0.8.4", features = ["tokio"] }
+axum = { version = "0.8.4", features = ["tokio", "ws"] }
 chrono = { version = "0.4.27", features = ["serde"] }
 clap = { version = "4.4.1", features = ["derive"] }
-clickhouse = { version = "0.13.0", default-features = false, features = [
+clickhouse = { version = "0.15.1", default-features = false, features = [
     "lz4",
     "uuid",
     "inserter",
@@ -33,6 +34,10 @@ rayon = "1.7.0"
 reqwest = { version = "0.12.4", features = [
     "rustls-tls",
     "json",
+    "gzip",
+    "brotli",
+    "zstd",
+    "deflate",
 ], default-features = false }
 rust-embed = { version = "8.0.0", features = ["interpolate-folder-path"] }
 schemars = { version = "0.9", features = ["chrono04"] }

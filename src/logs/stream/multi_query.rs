@@ -65,7 +65,12 @@ impl Stream for MultiQueryStream {
                 let next_line_poll = {
                     let fut = cursor.next();
                     pin!(fut);
-                    fut.poll(cx)
+                    match fut.poll(cx) {
+                        Poll::Ready(Ok(Some(msg))) => Poll::Ready(Ok(Some(msg.into_owned()))),
+                        Poll::Ready(Ok(None)) => Poll::Ready(Ok(None)),
+                        Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+                        Poll::Pending => Poll::Pending,
+                    }
                 };
 
                 match next_line_poll {

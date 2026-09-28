@@ -24,7 +24,13 @@ impl CursorStream {
     ) -> Result<Self> {
         let first_item = if buffer_response.is_empty() {
             // Prefetch the first row to check that the response is not empty
-            Some(cursor.next().await?.ok_or_else(|| Error::NotFound)?)
+            Some(
+                cursor
+                    .next()
+                    .await?
+                    .map(StructuredMessage::into_owned)
+                    .ok_or_else(|| Error::NotFound)?,
+            )
         } else {
             None
         };
@@ -65,7 +71,12 @@ impl Stream for CursorStream {
         let poll_result = {
             let fut = self.cursor.next();
             pin!(fut);
-            fut.poll(cx)
+            match fut.poll(cx) {
+                Poll::Ready(Ok(Some(msg))) => Poll::Ready(Ok(Some(msg.into_owned()))),
+                Poll::Ready(Ok(None)) => Poll::Ready(Ok(None)),
+                Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+                Poll::Pending => Poll::Pending,
+            }
         };
 
         match poll_result {

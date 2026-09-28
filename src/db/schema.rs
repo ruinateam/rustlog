@@ -11,6 +11,27 @@ use uuid::Uuid;
 
 pub const MESSAGES_STRUCTURED_TABLE: &str = "message_structured";
 
+mod datetime64_millis_u64 {
+    use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(timestamp: &u64, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        i64::try_from(*timestamp)
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let timestamp = i64::deserialize(deserializer)?;
+        u64::try_from(timestamp).map_err(D::Error::custom)
+    }
+}
+
 bitflags! {
     #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone, Copy)]
     #[serde(transparent)]
@@ -75,6 +96,7 @@ impl MessageFlags {
 pub struct StructuredMessage<'a> {
     pub channel_id: Cow<'a, str>,
     pub channel_login: Cow<'a, str>,
+    #[serde(with = "datetime64_millis_u64")]
     pub timestamp: u64,
     #[serde(with = "clickhouse::serde::uuid")]
     pub id: Uuid,
@@ -98,6 +120,7 @@ pub struct StructuredMessage<'a> {
 pub struct UnstructuredMessage<'a> {
     pub channel_id: &'a str,
     pub user_id: &'a str,
+    #[serde(with = "datetime64_millis_u64")]
     pub timestamp: u64,
     pub raw: &'a str,
 }
