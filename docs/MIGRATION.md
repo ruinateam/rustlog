@@ -1,25 +1,154 @@
-# Migrating from justlog
+# Миграция и исторический импорт
 
-Rustlog supports migrating your existing data from justlog. This process will read all log files and write them into the database.
+Rustlog поддерживает два сценария переноса истории:
 
-## Config
-Rustlog uses a config format nearly identical to justlog, however you still need to add Clickhouse connection settings to it. See [CONFIG.md](./CONFIG.md) for the keys starting with `clickhouse`.
+1. Миграция локальных файлов justlog.
+2. Зеркалирование истории из удаленных rustlog/justlog API.
 
-After this, you should have a running rustlog instance logging new messages.
+Для текущего локального ChatTiers-стека основной способ - зеркала через `mirror` и `fill-missing`.
 
-## Data
-First, rustlog needs to have access to the justlog logs directory. If using docker, you need to add it as a volume mount to the container.
+## Политика opt-out при импорте
 
-After that, you can run the migration command.
+Перед импортом Rustlog загружает сохраненное состояние каналов и opt-out из ClickHouse. Исторические строки для opted-out пользователей и каналов не добавляются, даже если они присутствуют в локальном файле или удаленном зеркале. Проверка повторяется непосредственно перед вставкой batch.
 
-Docker:
+Это не заменяет первоначальную миграцию состояния: сначала запусти backend с актуальным конфигом, чтобы он выполнил `8_channel_membership_and_opt_out_state`. Не удаляй `channels` и `optOut` из старого JSON до успешного запуска - они являются исходным снимком для этой миграции.
+
+## Миграция локальных justlog-файлов
+
+Если есть папка со старыми файлами justlog, ее можно импортировать напрямую в ClickHouse.
+
+```bash
+./target/release/rustlog migrate \
+  --source-dir /path/to/justlog/logs \
+  --jobs 1
 ```
-docker exec -it rustlog rustlog migrate --source-dir /logs --jobs 1
-```
-Manual installation:
-```
-rustlog migrate --source-dir /path/to/logs --jobs 1
-```
-The `--jobs` parameter defines how many threads rustlog will use for migrating. If your logs are on a HDD, you should keep it at 1, as IO will likely be the bottleneck anyway. If you have an SSD, then setting the value to half of your CPU threads should generally work well.
 
-The migration can take anywhere from a few minutes to a few hours depending on your amount of logs and system resources.
+`--jobs` задает число параллельных потоков. Для HDD лучше оставить `1`; для SSD можно увеличить, но ClickHouse и диск все равно будут основным лимитом.
+
+## Зеркалирование из API
+
+Команда `mirror` импортирует JSON-логи из rustlog/justlog API.
+
+```bash
+./target/release/rustlog mirror \
+  --base-url https://logs.zonian.dev \
+  --channel zakvielchannel \
+  --year 2026 \
+  --month 1 \
+  --batch 1000
+```
+
+Можно ограничить импорт конкретным днем:
+
+```bash
+./target/release/rustlog mirror \
+  --base-url https://logs.zonian.dev \
+  --channel zakvielchannel \
+  --year 2026 \
+  --month 1 \
+  --day 2
+```
+
+Если нужен прокси из WSL, используй Windows-host адрес:
+
+```bash
+./target/release/rustlog mirror \
+  --base-url https://logs.zonian.dev \
+  --channel zakvielchannel \
+  --year 2026 \
+  --proxy http://172.30.96.1:10808
+```
+
+## Импорт из локального cache
+
+Если JSON уже скачан локально, можно импортировать без HTTP.
+
+Ожидаемая структура:
+
+```text
+cache/<channel>/daily/YYYY/MM/DD.json
+```
+
+Команда:
+
+```bash
+./target/release/rustlog mirror \
+  --local-cache /mnt/c/Users/Linar/Desktop/twitchlogs/cache \
+  --channel zakvielchannel \
+  --year 2026
+```
+
+## Дозагрузка только пропущенных дней
+
+`fill-missing` берет список зеркал из:
+
+```text
+https://logs.zonian.dev/api/<channel>
+```
+
+Затем сравнивает доступные дни с локальными днями в ClickHouse и импортирует только отсутствующие.
+
+Dry-run:
+
+```bash
+./target/release/rustlog fill-missing \
+  --year 2026 \
+  --channel linaryx \
+  --channel zakvielchannel \
+  --channel jacklooney \
+  --proxy http://172.30.96.1:10808 \
+  --dry-run
+```
+
+Реальная загрузка:
+
+```bash
+./target/release/rustlog fill-missing \
+  --year 2026 \
+  --channel linaryx \
+  --channel zakvielchannel \
+  --channel jacklooney \
+  --proxy http://172.30.96.1:10808
+```
+
+## Дедупликация после импорта
+
+Во время повторных импортов могут появиться дубли. Проверка идет по Twitch message id.
+
+Проверить:
+
+```bash
+./target/release/rustlog cleanup-duplicate-ids \
+  --year 2026 \
+  --channel linaryx \
+  --channel zakvielchannel \
+  --channel jacklooney
+```
+
+Удалить дубли:
+
+```bash
+./target/release/rustlog cleanup-duplicate-ids \
+  --year 2026 \
+  --channel linaryx \
+  --channel zakvielchannel \
+  --channel jacklooney \
+  --execute
+```
+
+Без `--execute` команда ничего не меняет. Перед любым `--execute` сделай резервную копию ClickHouse и проверь dry-run: операция переписывает данные и не должна запускаться как регулярная необслуживаемая задача.
+
+## Проверка результата
+
+После импорта проверь API/backend и состояние сервиса:
+
+```bash
+systemctl status rustlog.service --no-pager -l
+curl -I http://localhost:8026
+```
+
+Для просмотра ошибок:
+
+```bash
+journalctl -u rustlog.service -n 100 --no-pager
+```

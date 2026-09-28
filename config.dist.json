@@ -3,7 +3,7 @@
   "clickhouseDb": "rustlog",
   "clickhouseUsername": "user",
   "clickhousePassword": "SuperSecretPassword",
-  "listenAddress": "0.0.0.0:8025",
+  "listenAddress": "0.0.0.0:8026",
   "channels": ["12345"],
   "clientID": "id",
   "clientSecret": "secret",
