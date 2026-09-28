@@ -1,0 +1,22 @@
+---
+source: src/web/tests.rs
+expression: rendered
+---
+GET /api/v2/channels/11111/availability?userId=22222
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+{
+  "availableLogs": [
+    {
+      "month": "3",
+      "year": "2026"
+    },
+    {
+      "month": "2",
+      "year": "2026"
+    }
+  ]
+}

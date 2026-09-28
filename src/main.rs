@@ -29,7 +29,8 @@ use migrator::Migrator;
 use mimalloc::MiMalloc;
 use state::OperationalState;
 use std::{
-    env,
+    env, fs,
+    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -70,6 +71,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+    if let Some(Command::Openapi { out_dir }) = &args.subcommand {
+        return write_openapi(out_dir);
+    }
+
     let config = Config::load(&args.config_path)?;
     let mut db = clickhouse::Client::default()
         .with_url(&config.clickhouse_url)
@@ -90,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
 
     match args.subcommand {
         None => run(config, db).await,
+        Some(Command::Openapi { .. }) => unreachable!("handled before loading the config"),
         Some(Command::Migrate {
             source_dir,
             channel_id,
@@ -253,6 +259,25 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
             Err(anyhow!("Token refresh task exited unexpectedly"))
         }
     }
+}
+
+fn write_openapi(out_dir: &Path) -> anyhow::Result<()> {
+    let api = web::api();
+    fs::create_dir_all(out_dir)
+        .with_context(|| format!("Could not create {}", out_dir.display()))?;
+
+    for (name, openapi) in [
+        ("legacy.json", api.legacy_openapi),
+        ("v2.json", api.v2_openapi),
+    ] {
+        let path = out_dir.join(name);
+        let mut json = serde_json::to_string_pretty(&*openapi)?;
+        json.push('\n');
+        fs::write(&path, json).with_context(|| format!("Could not write {}", path.display()))?;
+        info!("Wrote {}", path.display());
+    }
+
+    Ok(())
 }
 
 async fn migrate(

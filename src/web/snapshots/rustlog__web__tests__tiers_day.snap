@@ -1,0 +1,65 @@
+---
+source: src/web/tests.rs
+expression: rendered
+---
+GET /channelid/11111/tiers/2026/3/1
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+{
+  "day": 1,
+  "entries": [
+    {
+      "messages": 2,
+      "rank15m": 1,
+      "rank1m": 1,
+      "rank30m": 1,
+      "rank5m": 1,
+      "rank60m": 1,
+      "tier15m": "HT1",
+      "tier1m": "HT1",
+      "tier30m": "HT1",
+      "tier5m": "HT1",
+      "tier60m": "HT1",
+      "tierScore": 50,
+      "uniqueMessages": 2,
+      "userId": "22222",
+      "userLogin": null,
+      "windows15m": 2,
+      "windows1m": 2,
+      "windows30m": 2,
+      "windows5m": 2,
+      "windows60m": 2
+    },
+    {
+      "messages": 1,
+      "rank15m": 2,
+      "rank1m": 2,
+      "rank30m": 2,
+      "rank5m": 2,
+      "rank60m": 2,
+      "tier15m": "LT1",
+      "tier1m": "LT1",
+      "tier30m": "LT1",
+      "tier5m": "LT1",
+      "tier60m": "LT1",
+      "tierScore": 45,
+      "uniqueMessages": 1,
+      "userId": "33333",
+      "userLogin": null,
+      "windows15m": 1,
+      "windows1m": 1,
+      "windows30m": 1,
+      "windows5m": 1,
+      "windows60m": 1
+    }
+  ],
+  "month": 3,
+  "timezone": "Europe/Moscow",
+  "totalMessages": 3,
+  "totalUniqueMessages": 3,
+  "totalUsers": 2,
+  "year": 2026
+}

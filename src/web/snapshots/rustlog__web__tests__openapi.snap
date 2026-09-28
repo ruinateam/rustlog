@@ -1,0 +1,10 @@
+---
+source: src/web/tests.rs
+expression: rendered
+---
+GET /openapi.json
+status: 200 OK
+content-type: application/json
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+<body omitted>

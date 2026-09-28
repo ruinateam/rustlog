@@ -1,0 +1,10 @@
+---
+source: src/web/tests.rs
+expression: rendered
+---
+GET /admin/badges/11111
+status: 403 Forbidden
+content-type: text/plain; charset=utf-8
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+No, I don't think so

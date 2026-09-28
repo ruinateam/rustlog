@@ -7,8 +7,16 @@ pub mod schema;
 mod trace_layer;
 mod v2;
 
+#[cfg(test)]
+mod tests;
+
 use self::handlers::no_cache_header;
-use crate::{app::App, bot::BotMessage, web::admin::admin_auth, ShutdownRx};
+use crate::{
+    app::App,
+    bot::BotMessage,
+    web::admin::{admin_auth, AdminApiKey},
+    ShutdownRx,
+};
 use aide::{
     axum::{
         routing::{get, get_with, post, post_with},
@@ -19,9 +27,11 @@ use aide::{
 };
 use axum::{
     extract::Request,
+    http::StatusCode,
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
-    Extension, Json, ServiceExt,
+    routing::any,
+    Extension, Json, Router, ServiceExt,
 };
 use axum_prometheus::PrometheusMetricLayerBuilder;
 use prometheus::TextEncoder;
@@ -53,19 +63,63 @@ const SCALAR_HEAD_INJECT: &str = r#"
 </style>
 "#;
 
-pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessage>) {
-    aide::generate::on_error(|error| {
-        panic!("Could not generate docs: {error}");
-    });
-    aide::generate::infer_responses(true);
-    aide::generate::extract_schemas(true);
+/// The HTTP routes together with the OpenAPI documents that describe them.
+pub struct Api {
+    /// Needs the [`App`] state and the extensions added in [`run`].
+    pub router: Router<App>,
+    pub legacy_openapi: Arc<OpenApi>,
+    pub v2_openapi: Arc<OpenApi>,
+}
 
+pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessage>) {
     metrics_prometheus::install();
 
     let listen_address =
         parse_listen_addr(&app.config.listen_address).expect("Invalid listen address");
 
-    let cors = CorsLayer::permissive();
+    let app = service(app, bot_tx, shutdown_rx.clone());
+
+    info!("Listening on {listen_address}");
+
+    let listener = TcpListener::bind(&listen_address)
+        .await
+        .expect("Could not create TCP listener");
+
+    axum::serve(listener, ServiceExt::<Request>::into_make_service(app))
+        .with_graceful_shutdown(async move {
+            shutdown_rx.changed().await.ok();
+            debug!("Shutting down web task");
+        })
+        .await
+        .unwrap();
+}
+
+/// Builds the complete HTTP service that [`run`] serves.
+pub fn service(
+    app: App,
+    bot_tx: Sender<BotMessage>,
+    shutdown_rx: ShutdownRx,
+) -> NormalizePath<Router> {
+    let admin_api_key = AdminApiKey(app.config.admin_api_key.as_deref().map(Arc::from));
+
+    let router = api()
+        .router
+        .layer(Extension(bot_tx))
+        .layer(Extension(shutdown_rx))
+        .layer(Extension(admin_api_key))
+        .with_state(app)
+        .layer(CorsLayer::permissive())
+        .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
+    NormalizePath::trim_trailing_slash(router)
+}
+
+/// Builds the routes and generates their OpenAPI documents.
+pub fn api() -> Api {
+    aide::generate::on_error(|error| {
+        panic!("Could not generate docs: {error}");
+    });
+    aide::generate::infer_responses(true);
+    aide::generate::extract_schemas(true);
 
     let mut api = OpenApi {
         info: Info {
@@ -122,9 +176,7 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
                     .description("Open a WebSocket feed after authenticating with `X-Api-Key`. Messages are live, at-least-once deliveries accepted by the writer queue; reconnect and replay through the HTTP logs API after a `1013` close.")
             }),
         )
-        .route_layer(middleware::from_fn_with_state(app.clone(), admin_auth))
-        .layer(Extension(bot_tx))
-        .layer(Extension(shutdown_rx.clone()));
+        .route_layer(middleware::from_fn(admin_auth));
 
     let mut v2_api = OpenApi {
         info: Info {
@@ -147,13 +199,18 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
     let v2_router = v2::router()
         .route("/docs", get(v2::scalar_page))
         .route("/openapi.json", get(v2::serve_openapi))
-        .finish_api(&mut v2_api)
-        .with_state(app.clone());
+        // Unlike a nested service, a nested router neither matches its bare
+        // prefix nor keeps its own default fallback: without these, `/api/v2`
+        // would hit the legacy routes and unknown paths the frontend fallback.
+        .route("/", any(not_found))
+        .fallback(not_found)
+        .finish_api(&mut v2_api);
     enrich_openapi(&mut v2_api);
-    let v2_router = v2_router.layer(Extension(v2::V2OpenApi(Arc::new(v2_api))));
+    let v2_openapi = Arc::new(v2_api);
+    let v2_router = v2_router.layer(Extension(v2::V2OpenApi(v2_openapi.clone())));
 
     let router = ApiRouter::new()
-        .nest_service("/api/v2", v2_router)
+        .merge(Router::new().nest("/api/v2", v2_router))
         .nest("/admin", admin_routes)
         .api_route(
             "/channels",
@@ -301,27 +358,13 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
         .finish_api(&mut api);
 
     enrich_openapi(&mut api);
+    let legacy_openapi = Arc::new(api);
 
-    let app = router
-        .layer(Extension(Arc::new(api)))
-        .with_state(app)
-        .layer(cors)
-        .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
-    let app = NormalizePath::trim_trailing_slash(app);
-
-    info!("Listening on {listen_address}");
-
-    let listener = TcpListener::bind(&listen_address)
-        .await
-        .expect("Could not create TCP listener");
-
-    axum::serve(listener, ServiceExt::<Request>::into_make_service(app))
-        .with_graceful_shutdown(async move {
-            shutdown_rx.changed().await.ok();
-            debug!("Shutting down web task");
-        })
-        .await
-        .unwrap();
+    Api {
+        router: router.layer(Extension(legacy_openapi.clone())),
+        legacy_openapi,
+        v2_openapi,
+    }
 }
 
 pub fn parse_listen_addr(addr: &str) -> Result<SocketAddr, AddrParseError> {
@@ -330,6 +373,10 @@ pub fn parse_listen_addr(addr: &str) -> Result<SocketAddr, AddrParseError> {
     } else {
         SocketAddr::from_str(addr)
     }
+}
+
+async fn not_found() -> StatusCode {
+    StatusCode::NOT_FOUND
 }
 
 async fn capabilities() -> Json<Vec<&'static str>> {

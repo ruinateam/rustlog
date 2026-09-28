@@ -14,19 +14,25 @@ use axum::{
 use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
+/// The configured admin API key, provided to [`admin_auth`] as a request
+/// extension so that the routes can be built without the app state.
+#[derive(Clone)]
+pub struct AdminApiKey(pub Option<Arc<str>>);
+
 pub async fn admin_auth(
-    app: State<App>,
+    Extension(AdminApiKey(admin_key)): Extension<AdminApiKey>,
     request: Request,
     next: Next,
 ) -> Result<Response, impl IntoResponse> {
-    if let Some(admin_key) = &app.config.admin_api_key {
+    if let Some(admin_key) = admin_key {
         if request
             .headers()
             .get("X-Api-Key")
             .and_then(|value| value.to_str().ok())
-            == Some(admin_key)
+            == Some(&*admin_key)
         {
             let response = next.run(request).await;
             return Ok(response);

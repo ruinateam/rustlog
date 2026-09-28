@@ -12,6 +12,12 @@ pub struct Args {
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Write the OpenAPI documents of the HTTP API; needs neither a config nor ClickHouse
+    Openapi {
+        /// Directory to write `legacy.json` and `v2.json` into
+        #[clap(default_value = "docs/openapi")]
+        out_dir: std::path::PathBuf,
+    },
     /// Migrate existing justlog logs
     Migrate {
         /// The justlog logs folder

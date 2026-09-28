@@ -1,0 +1,13 @@
+---
+source: src/web/tests.rs
+expression: rendered
+---
+GET /api/v2/channels/11111/users/22222/logs?from=2026-03-01T00:00:00Z&to=2026-04-01T00:00:00Z&format=ndjson
+status: 200 OK
+content-type: application/x-ndjson
+cache-control: no-cache
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+{"displayName":"Alice","id":"00000000-0000-0000-0000-000000000001","tags":{"badge-info":"","badges":"subscriber/12","color":"#FF0000","display-name":"Alice","emotes":"","flags":"","id":"00000000-0000-0000-0000-000000000001","room-id":"11111","subscriber":"1","tmi-sent-ts":"1772348400000","user-id":"22222","user-type":""},"text":"hello world","timestamp":"2026-03-01T07:00:00Z"}
+{"displayName":"Alice","id":"00000000-0000-0000-0000-000000000003","tags":{"badge-info":"","badges":"subscriber/12","color":"#FF0000","display-name":"Alice","emotes":"","flags":"","id":"00000000-0000-0000-0000-000000000003","room-id":"11111","subscriber":"1","tmi-sent-ts":"1772355600000","user-id":"22222","user-type":""},"text":"hello again","timestamp":"2026-03-01T09:00:00Z"}
+{"displayName":"Alice","id":"00000000-0000-0000-0000-000000000005","tags":{"badge-info":"","badges":"subscriber/12","color":"#FF0000","display-name":"Alice","emotes":"","flags":"","id":"00000000-0000-0000-0000-000000000005","room-id":"11111","subscriber":"1","tmi-sent-ts":"1773594000000","user-id":"22222","user-type":""},"text":"mid month","timestamp":"2026-03-15T17:00:00Z"}

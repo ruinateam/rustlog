@@ -1,0 +1,8 @@
+---
+source: src/web/tests.rs
+expression: rendered
+---
+GET /api/v2/nonexistent
+status: 404 Not Found
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---

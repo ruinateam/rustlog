@@ -56,6 +56,49 @@ jobs:
       - name: Run tests
         run: cargo nextest run
 
+      - name: Check that the committed OpenAPI documents are up to date
+        run: |
+          cargo run -q -- openapi
+          git diff --exit-code -- docs/openapi
+          test -z "$(git status --porcelain -- docs/openapi)"
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    services:
+      clickhouse:
+        # Keep in sync with docker-compose.dev.yml.
+        image: clickhouse/clickhouse-server:26.5.6.64
+        env:
+          CLICKHOUSE_USER: test
+          CLICKHOUSE_PASSWORD: test
+        ports:
+          - 8123:8123
+        options: >-
+          --ulimit nofile=262144:262144
+          --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      RUSTLOG_TEST_CLICKHOUSE_URL: http://localhost:8123
+      RUSTLOG_TEST_CLICKHOUSE_USER: test
+      RUSTLOG_TEST_CLICKHOUSE_PASSWORD: test
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Run integration tests
+        run: cargo nextest run --run-ignored only
+
   deny:
     name: Dependency audit
     runs-on: ubuntu-latest
@@ -100,7 +143,7 @@ jobs:
   release:
     name: Release
     if: github.event_name == 'push'
-    needs: [lint, test, deny, web]
+    needs: [lint, test, integration, deny, web]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -117,7 +160,7 @@ jobs:
 
   docker:
     name: Docker image
-    needs: [lint, test, deny, web, release]
+    needs: [lint, test, integration, deny, web, release]
     # `release` is skipped on pull requests, which would otherwise skip this job.
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest

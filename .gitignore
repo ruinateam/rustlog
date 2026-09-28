@@ -12,3 +12,7 @@ tmp/
 .sisyphus/
 .playwright-mcp/
 __migration_probe__/
+
+# insta: pending snapshots from failed test runs
+*.snap.new
+*.pending-snap

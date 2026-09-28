@@ -65,12 +65,25 @@ just build
 Если вы планируете отправлять изменения, запустите те же проверки, что и CI:
 
 ```bash
-# Форматирование, clippy, тесты и аудит зависимостей бэкенда
+# Форматирование, clippy, тесты, аудит зависимостей и актуальность OpenAPI-спек
 just check
+
+# Integration-тесты HTTP API на локальном ClickHouse (нужен .env, как для docker-compose.dev.yml)
+just test-integration
 
 # Проверка типов веб-интерфейса
 just web-check
 ```
+
+### Тесты
+
+Integration-тесты в [`src/web/tests.rs`](src/web/tests.rs) поднимают весь HTTP-стек на отдельной базе в ClickHouse, засевают сообщения и сверяют статус, заголовки и тело ответа каждого маршрута со snapshot-ами из `src/web/snapshots` (через [insta](https://insta.rs)). Так legacy API не может измениться незаметно. Без ClickHouse они пропускаются. Чтобы запустить их на своём сервере ClickHouse (он должен работать в UTC), задайте `RUSTLOG_TEST_CLICKHOUSE_URL`, при необходимости `RUSTLOG_TEST_CLICKHOUSE_USER` и `RUSTLOG_TEST_CLICKHOUSE_PASSWORD`, и выполните `cargo nextest run --run-ignored only`.
+
+Если поведение меняется намеренно, обновите snapshot-ы (`INSTA_UPDATE=always just test-integration`) и проверьте дифф в PR.
+
+### OpenAPI
+
+Спеки обоих API лежат в [`docs/openapi`](docs/openapi) и генерируются из кода командой `just openapi` (`rustlog openapi [каталог]`, ни конфиг, ни ClickHouse не нужны). CI проверяет, что закоммиченные файлы совпадают со сгенерированными, так что изменения API видны в диффе PR.
 
 ## Публикация Docker-образа
 
@@ -101,8 +114,8 @@ docker run --rm -p 8026:8026 \
 
 ### API
 
-- Старое - `/docs` и `/openapi.json`
-- Новое (v2) - `/api/v2/docs` и `/api/v2/openapi.json`, смотрите [API_V2.md](./docs/API_V2.md).
+- Старое - `/docs` и `/openapi.json`, спека в репозитории: [`docs/openapi/legacy.json`](docs/openapi/legacy.json)
+- Новое (v2) - `/api/v2/docs` и `/api/v2/openapi.json`, спека в репозитории: [`docs/openapi/v2.json`](docs/openapi/v2.json), смотрите [API_V2.md](./docs/API_V2.md).
 - `GET /metrics` — Prometheus-метрики.
 
 ### Реал-тайм события
@@ -157,7 +170,8 @@ Tiers отдаётся по эндпоинту `/{channel_id_type}/{channel}/tie
 Workflow [`ci.yml`](.github/workflows/ci.yml) запускается на PR и на отправку изменений в `main`. Проверки идут параллельными задачами:
 
 - форматирование и clippy;
-- тесты через cargo-nextest;
+- тесты через cargo-nextest и проверка актуальности OpenAPI-спек;
+- integration-тесты HTTP API на ClickHouse в service-контейнере;
 - аудит зависимостей через cargo-deny (уязвимости, лицензии, источники, настройки в [`deny.toml`](deny.toml));
 - проверка типов и сборка веб-интерфейса, затем проверка бэкенда со встроенным веб-интерфейсом.
 

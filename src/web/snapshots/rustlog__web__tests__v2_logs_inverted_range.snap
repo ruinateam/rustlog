@@ -1,0 +1,14 @@
+---
+source: src/web/tests.rs
+expression: rendered
+---
+GET /api/v2/channels/11111/users/22222/logs?from=2026-04-01T00:00:00Z&to=2026-03-01T00:00:00Z
+status: 400 Bad Request
+content-type: application/problem+json
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+{
+  "code": "invalid_request",
+  "status": 400,
+  "title": "The request is invalid"
+}

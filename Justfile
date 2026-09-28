@@ -1,3 +1,5 @@
+set dotenv-load
+
 compose := "docker compose -f docker-compose.dev.yml"
 
 # List available recipes
@@ -9,7 +11,7 @@ run *args: db-up
     cargo run -- {{ args }}
 
 # Run the same checks as CI
-check: fmt-check clippy test deny
+check: fmt-check clippy test deny openapi-check
 
 # Format the code
 fmt:
@@ -27,9 +29,25 @@ clippy:
 test *args:
     cargo nextest run {{ args }}
 
+# Run the integration tests against the local ClickHouse (needs .env)
+test-integration *args: db-up
+    RUSTLOG_TEST_CLICKHOUSE_URL=http://localhost:8123 \
+    RUSTLOG_TEST_CLICKHOUSE_USER="${CLICKHOUSE_USER:-user}" \
+    RUSTLOG_TEST_CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}" \
+    cargo nextest run --run-ignored only {{ args }}
+
 # Audit dependencies for advisories, licenses and banned crates
 deny:
     cargo deny check
+
+# Regenerate the committed OpenAPI documents in docs/openapi
+openapi:
+    RUST_LOG=warn cargo run -q -- openapi
+
+# Fail if the committed OpenAPI documents are out of date
+openapi-check: openapi
+    git diff --exit-code -- docs/openapi
+    test -z "$(git status --porcelain -- docs/openapi)"
 
 # Build the web frontend into web/dist
 web-build:

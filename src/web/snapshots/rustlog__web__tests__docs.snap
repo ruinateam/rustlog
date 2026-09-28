@@ -1,0 +1,10 @@
+---
+source: src/web/tests.rs
+expression: rendered
+---
+GET /docs
+status: 200 OK
+content-type: text/html; charset=utf-8
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+<body omitted>

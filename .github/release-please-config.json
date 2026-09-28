@@ -7,6 +7,10 @@
       "package-name": "rustlog",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
+      "extra-files": [
+        { "type": "json", "path": "docs/openapi/legacy.json", "jsonpath": "$.info.version" },
+        { "type": "json", "path": "docs/openapi/v2.json", "jsonpath": "$.info.version" }
+      ],
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug Fixes" },
