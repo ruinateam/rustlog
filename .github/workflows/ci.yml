@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: ["main"]
-    tags: ["v*.*.*"]
   pull_request:
     branches: ["main"]
 
@@ -95,9 +94,32 @@ jobs:
       - name: Check the backend with the embedded frontend
         run: cargo check --features embed-frontend
 
+  # Maintains the release PR and, once it is merged, tags the release. Tags
+  # pushed with GITHUB_TOKEN do not trigger workflows, so the release image is
+  # built by the docker job below using this job's outputs.
+  release:
+    name: Release
+    if: github.event_name == 'push'
+    needs: [lint, test, deny, web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: .github/release-please-config.json
+          manifest-file: .github/release-please-manifest.json
+
   docker:
     name: Docker image
-    needs: [lint, test, deny, web]
+    needs: [lint, test, deny, web, release]
+    # `release` is skipped on pull requests, which would otherwise skip this job.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -127,9 +149,10 @@ jobs:
           tags: |
             type=ref,event=branch
             type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=sha
+            type=semver,pattern={{version}},value=${{ needs.release.outputs.version }},enable=${{ needs.release.outputs.created == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release.outputs.version }},enable=${{ needs.release.outputs.created == 'true' }}
+            type=raw,value=latest,enable=${{ needs.release.outputs.created == 'true' }}
 
       # Pull requests only verify that the image builds, so they skip the
       # slower arm64 build and nothing is pushed.

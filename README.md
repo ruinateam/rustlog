@@ -154,16 +154,30 @@ Tiers отдаётся по эндпоинту `/{channel_id_type}/{channel}/tie
 Перенос старых justlog-файлов и правила opt-out при импорте описаны в [MIGRATION.md](./docs/MIGRATION.md).
 
 ## CI
-Workflow [`ci.yml`](.github/workflows/ci.yml) запускается на PR, отправку изменений в `main` и теги `v*.*.*`. Проверки идут параллельными задачами:
+Workflow [`ci.yml`](.github/workflows/ci.yml) запускается на PR и на отправку изменений в `main`. Проверки идут параллельными задачами:
 
 - форматирование и clippy;
 - тесты через cargo-nextest;
 - аудит зависимостей через cargo-deny (уязвимости, лицензии, источники, настройки в [`deny.toml`](deny.toml));
 - проверка типов и сборка веб-интерфейса, затем проверка бэкенда со встроенным веб-интерфейсом.
 
-Docker-образ собирается только после успешных проверок. На PR он собирается для `linux/amd64` без публикации. На `main` и теги мультиархитектурный образ с SBOM и provenance публикуется в [GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry) с тегами `main`, `sha-<commit>`, а для релизов `X.Y.Z` и `X.Y`.
+Docker-образ собирается только после успешных проверок. На PR он собирается для `linux/amd64` без публикации. На `main` мультиархитектурный образ с SBOM и provenance публикуется в [GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry) с тегами `main` и `sha-<commit>`, а при релизе ещё и с `X.Y.Z`, `X.Y` и `latest`.
 
 Dependabot раз в неделю предлагает обновления Cargo-зависимостей и GitHub Actions.
+
+## Релизы
+
+Релизы ведёт [release-please](https://github.com/googleapis/release-please) по сообщениям коммитов в формате [Conventional Commits](https://www.conventionalcommits.org/ru/) (`feat:`, `fix:`, `refactor:` и т.д.):
+
+1. После каждой отправки в `main` release-please открывает или обновляет PR с новой версией в `Cargo.toml` и записями в `CHANGELOG.md`.
+2. Когда этот PR вливается, создаются тег `vX.Y.Z` и GitHub Release, а CI публикует образ с тегами версии.
+
+Пока версия ниже `1.0.0`, `feat` и ломающие изменения поднимают minor-версию, а `fix` поднимает patch. Настройки лежат в [`.github/release-please-config.json`](.github/release-please-config.json).
+
+> [!NOTE]
+> Чтобы release-please мог открывать PR, в настройках репозитория (Settings → Actions → General → Workflow permissions) должна быть включена опция «Allow GitHub Actions to create and approve pull requests».
+>
+> PR от release-please создаётся с `GITHUB_TOKEN`, поэтому CI на нём не запускается. Если для `main` включены обязательные проверки, release-please нужно дать токен GitHub App или PAT.
 
 ## Лицензия
 
