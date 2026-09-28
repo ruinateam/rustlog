@@ -1,17 +1,17 @@
-FROM --platform=$BUILDPLATFORM node:18-alpine as frontend
+FROM --platform=$BUILDPLATFORM node:18-alpine AS frontend
 WORKDIR /src/web
 COPY web .
 RUN yarn install --ignore-optional
 RUN yarn build
 
-FROM --platform=$BUILDPLATFORM rust:1.87-bookworm AS chef
+FROM --platform=$BUILDPLATFORM rust:1.94-bookworm AS chef
 USER root
 ENV CARGO_PROFILE_RELEASE_LTO=true
-RUN cargo install cargo-chef
+RUN cargo install cargo-chef --version 0.1.71 --locked
 WORKDIR /app
 
 FROM --platform=$BUILDPLATFORM chef AS planner
-COPY . . 
+COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM --platform=$BUILDPLATFORM chef AS builder
@@ -35,7 +35,8 @@ RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --re
 RUN mv "./target/$(cat /target.txt)/release" "/output"
 
 FROM debian:bookworm-slim AS runtime
-RUN useradd rustlog && mkdir /logs && chown rustlog: /logs
+RUN useradd rustlog && mkdir /logs && mkdir /app && chown rustlog: /logs /app
 COPY --from=builder /output/rustlog /usr/local/bin/
+WORKDIR /app
 USER rustlog
 CMD ["/usr/local/bin/rustlog"]

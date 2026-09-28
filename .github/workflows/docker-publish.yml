@@ -7,11 +7,11 @@ name: Docker
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
     # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -21,6 +21,42 @@ env:
 
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.94
+        with:
+          components: rustfmt
+
+      - name: Check Rust formatting
+        run: cargo fmt -- --check
+
+      - name: Check and test Rust
+        run: cargo test
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: yarn
+          cache-dependency-path: web/yarn.lock
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          corepack enable
+          yarn install --frozen-lockfile --ignore-optional
+          yarn typecheck
+          yarn build
+
   build-push:
     runs-on: ubuntu-latest
     permissions:
