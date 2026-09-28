@@ -1,14 +1,17 @@
 FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 WORKDIR /src/web
+COPY web/package.json web/yarn.lock ./
+RUN yarn install --frozen-lockfile --ignore-optional
 COPY web .
-RUN yarn install --ignore-optional
 RUN yarn build
 
 FROM --platform=$BUILDPLATFORM rust:1.98-bookworm AS chef
-USER root
-ENV CARGO_PROFILE_RELEASE_LTO=true
-RUN cargo install cargo-chef --version 0.1.71 --locked
 WORKDIR /app
+# Install the toolchain pinned in rust-toolchain.toml up front: every later
+# cargo and rustup command in /app resolves to it.
+COPY rust-toolchain.toml .
+RUN rustup toolchain install
+RUN cargo install cargo-chef --version 0.1.78 --locked
 
 FROM --platform=$BUILDPLATFORM chef AS planner
 COPY . .
@@ -20,23 +23,25 @@ ARG TARGETPLATFORM
 RUN case "${TARGETPLATFORM}" in \
       "linux/arm64") echo "aarch64-unknown-linux-gnu" > /target.txt && echo "-C linker=aarch64-linux-gnu-gcc" > /flags.txt ;; \
       "linux/amd64") echo "x86_64-unknown-linux-gnu" > /target.txt && echo "-C linker=x86_64-linux-gnu-gcc" > /flags.txt ;; \
-      *) exit 1 ;; \
+      *) echo "Unsupported platform: ${TARGETPLATFORM}" >&2 && exit 1 ;; \
     esac
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -yq build-essential g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
+    apt-get install -yq build-essential g++-aarch64-linux-gnu binutils-aarch64-linux-gnu && \
+    rm -rf /var/lib/apt/lists/*
 RUN rustup target add "$(cat /target.txt)"
 
 COPY --from=planner /app/recipe.json recipe.json
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook --target "$(cat /target.txt)" --release --features embed-frontend --recipe-path recipe.json
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook --profile dist --target "$(cat /target.txt)" --features embed-frontend --recipe-path recipe.json
 COPY . .
-COPY --from=frontend /src/web web/
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release --features embed-frontend
-RUN mv "./target/$(cat /target.txt)/release" "/output"
+COPY --from=frontend /src/web/dist web/dist
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --profile dist --target "$(cat /target.txt)" --features embed-frontend
+RUN mv "./target/$(cat /target.txt)/dist/rustlog" /rustlog
 
 FROM debian:bookworm-slim AS runtime
 RUN useradd rustlog && mkdir /logs && mkdir /app && chown rustlog: /logs /app
-COPY --from=builder /output/rustlog /usr/local/bin/
+COPY --from=builder /rustlog /usr/local/bin/rustlog
 WORKDIR /app
 USER rustlog
+EXPOSE 8026
 CMD ["/usr/local/bin/rustlog"]

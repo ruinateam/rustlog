@@ -1,5 +1,11 @@
+**/.git
+.github
+.idea
 /target
 /logs*
+**/node_modules
+web/dist
 config.json
-**node_modules/
+.env
+*.env
 Dockerfile

@@ -161,7 +161,7 @@ Workflow [`ci.yml`](.github/workflows/ci.yml) запускается на PR и 
 - аудит зависимостей через cargo-deny (уязвимости, лицензии, источники, настройки в [`deny.toml`](deny.toml));
 - проверка типов и сборка веб-интерфейса, затем проверка бэкенда со встроенным веб-интерфейсом.
 
-Docker-образ собирается только после успешных проверок. На PR он собирается для `linux/amd64` без публикации. На `main` мультиархитектурный образ с SBOM и provenance публикуется в [GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry) с тегами `main` и `sha-<commit>`, а при релизе ещё и с `X.Y.Z`, `X.Y` и `latest`.
+Docker-образ собирается только после успешных проверок. Для PR он собирается под `linux/amd64` и `linux/arm64` без публикации. На `main` образ с SBOM и provenance публикуется в [GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry) с тегами `main` и `sha-<commit>`, а при релизе ещё и с `X.Y.Z`, `X.Y` и `latest`.
 
 Dependabot раз в неделю предлагает обновления Cargo-зависимостей и GitHub Actions.
 
