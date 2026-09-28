@@ -1,11 +1,9 @@
 use anyhow::Context;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::path::Path;
 use std::{collections::HashSet, sync::RwLock};
-use tracing::info;
-
-const CONFIG_FILE_NAME: &str = "config.json";
+use std::{env, fs};
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,21 +29,34 @@ pub struct Config {
     pub supabase_url: Option<String>,
     #[serde(default)]
     pub supabase_service_key: Option<String>,
+    #[serde(default)]
+    pub enable_tier_snapshots: bool,
 }
 
 impl Config {
-    pub fn load() -> anyhow::Result<Self> {
-        let contents = fs::read_to_string(CONFIG_FILE_NAME)
-            .with_context(|| format!("Failed to load config from {CONFIG_FILE_NAME}"))?;
-        serde_json::from_str(&contents).context("Config deserializtion error")
-    }
+    pub fn load(config_path: &Path) -> anyhow::Result<Self> {
+        let contents = fs::read_to_string(config_path)
+            .with_context(|| format!("Failed to load config from {}", config_path.display()))?;
+        let mut config: Self =
+            serde_json::from_str(&contents).context("Config deserialization error")?;
 
-    pub fn save(&self) -> anyhow::Result<()> {
-        info!("Updating config");
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(CONFIG_FILE_NAME, json)?;
+        if let Ok(value) = env::var("RUSTLOG_CLICKHOUSE_URL") {
+            config.clickhouse_url = value;
+        }
+        if let Ok(value) = env::var("RUSTLOG_CLICKHOUSE_DB") {
+            config.clickhouse_db = value;
+        }
+        if let Ok(value) = env::var("RUSTLOG_CLICKHOUSE_USERNAME") {
+            config.clickhouse_username = Some(value);
+        }
+        if let Ok(value) = env::var("RUSTLOG_CLICKHOUSE_PASSWORD") {
+            config.clickhouse_password = Some(value);
+        }
+        if let Ok(value) = env::var("RUSTLOG_LISTEN_ADDRESS") {
+            config.listen_address = value;
+        }
 
-        Ok(())
+        Ok(config)
     }
 }
 

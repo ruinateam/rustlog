@@ -5,6 +5,7 @@ use crate::{
     db::schema::{StructuredMessage, UnstructuredMessage, MESSAGES_STRUCTURED_TABLE},
     logs::extract::{extract_raw_timestamp, extract_user_id},
     migrator::reader::ChannelLogDateMap,
+    state::OperationalState,
 };
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, Datelike, TimeZone, Utc};
@@ -31,6 +32,7 @@ const INSERT_BATCH_SIZE: u64 = 10_000_000;
 #[derive(Clone)]
 pub struct Migrator {
     db: clickhouse::Client,
+    state: OperationalState,
     source_logs_path: String,
     channel_ids: Arc<Vec<String>>,
 }
@@ -42,6 +44,7 @@ impl Migrator {
         channel_ids: Vec<String>,
     ) -> anyhow::Result<Migrator> {
         Ok(Self {
+            state: OperationalState::load(Arc::new(db.clone())).await?,
             db,
             source_logs_path,
             channel_ids: Arc::new(channel_ids),
@@ -104,7 +107,7 @@ impl Migrator {
                     let handle = tokio::spawn(async move {
                         let mut inserter = migrator
                             .db
-                            .inserter(MESSAGES_STRUCTURED_TABLE)?
+                            .inserter::<StructuredMessage<'static>>(MESSAGES_STRUCTURED_TABLE)
                             .with_timeouts(
                                 Some(Duration::from_secs(30)),
                                 Some(Duration::from_secs(180)),
@@ -176,12 +179,12 @@ impl Migrator {
     }
 
     // Returns the number of read bytes
-    async fn migrate_day<'a>(
+    async fn migrate_day(
         &self,
         root_path: &Path,
-        channel_id: &'a str,
+        channel_id: &str,
         date: DateTime<Utc>,
-        inserter: &mut Inserter<StructuredMessage<'a>>,
+        inserter: &mut Inserter<StructuredMessage<'static>>,
     ) -> anyhow::Result<usize> {
         let day_path = get_day_path(root_path, channel_id, date);
 
@@ -205,19 +208,19 @@ impl Migrator {
         }
     }
 
-    async fn migrate_reader<'a, R: BufRead>(
+    async fn migrate_reader<R: BufRead>(
         &self,
         reader: R,
         datetime: DateTime<Utc>,
-        channel_id: &'a str,
-        inserter: &mut Inserter<StructuredMessage<'a>>,
+        channel_id: &str,
+        inserter: &mut Inserter<StructuredMessage<'static>>,
     ) -> anyhow::Result<usize> {
         let mut read_bytes = 0;
 
         for (i, line) in reader.lines().enumerate() {
             let line = line.with_context(|| format!("Could not read line {i} from input"))?;
             read_bytes += line.len() + 1; // Add 1 byte for newline symbol
-            write_line(channel_id, line, inserter, datetime)
+            write_line(&self.state, channel_id, line, inserter, datetime)
                 .await
                 .with_context(|| format!("Could not write line {i} to inserter"))?;
         }
@@ -234,10 +237,11 @@ impl Migrator {
     }
 }
 
-async fn write_line<'a>(
-    channel_id: &'a str,
+async fn write_line(
+    state: &OperationalState,
+    channel_id: &str,
     raw: String,
-    inserter: &mut Inserter<StructuredMessage<'_>>,
+    inserter: &mut Inserter<StructuredMessage<'static>>,
     datetime: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     match tmi::IrcMessageRef::parse(&raw) {
@@ -262,10 +266,9 @@ async fn write_line<'a>(
             };
             match StructuredMessage::from_unstructured(&unstructured) {
                 Ok(msg) => {
-                    // This is safe because despite the function signature,
-                    // `inserter.write` only uses the value for serialization at the time of the method call, and not later
-                    let msg: StructuredMessage<'static> = unsafe { std::mem::transmute(msg) };
-                    inserter.write(&msg)?;
+                    if state.permits_historical_message(&msg.channel_id, &msg.user_id) {
+                        inserter.write(&msg).await?;
+                    }
                 }
                 Err(err) => {
                     error!("Could not convert message {unstructured:?}: {err}");

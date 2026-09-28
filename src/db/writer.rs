@@ -1,5 +1,5 @@
 use super::schema::StructuredMessage;
-use crate::{db::schema::MESSAGES_STRUCTURED_TABLE, ShutdownRx};
+use crate::{db::schema::MESSAGES_STRUCTURED_TABLE, state::OperationalState, ShutdownRx};
 use anyhow::{anyhow, Context};
 use clickhouse::Client;
 use lazy_static::lazy_static;
@@ -68,18 +68,24 @@ impl FlushBuffer {
         trace!("Read {} messages from flush buffer", msgs.len());
         msgs
     }
+
+    pub async fn remove_user(&self, user_id: &str) {
+        let mut messages = self.messages.write().await;
+        messages.retain(|message| message.user_id != user_id);
+    }
 }
 
 pub async fn create_writer(
-    db: Client,
+    db: Arc<Client>,
     mut shutdown_rx: ShutdownRx,
     flush_interval: u64,
+    state: OperationalState,
 ) -> anyhow::Result<(
     Sender<StructuredMessage<'static>>,
     FlushBuffer,
     JoinHandle<()>,
 )> {
-    let (tx, mut rx) = channel(1000);
+    let (tx, mut rx) = channel::<StructuredMessage<'static>>(1000);
 
     let flush_buffer = FlushBuffer::default();
     let flush_buffer_clone = flush_buffer.clone();
@@ -92,17 +98,19 @@ pub async fn create_writer(
             tokio::select! {
                 _ = &mut timeout => {
                     timeout.as_mut().reset(Instant::now() + Duration::from_secs(flush_interval));
-                    if let Err(err) = write_chunk_with_retry(&db, &flush_buffer).await {
+                    if let Err(err) = write_chunk_with_retry(&db, &flush_buffer, &state).await {
                         error!("Could not write messages: {err}");
                     }
                 }
                 Some(msg) = rx.recv() => {
-                    flush_buffer.messages.write().await.push(msg);
+                    if state.is_loggable(&msg.channel_id, &msg.user_id) {
+                        flush_buffer.messages.write().await.push(msg);
+                    }
                 }
                 Ok(()) = shutdown_rx.changed() => {
                     info!("Flushing database write buffer");
 
-                    if let Err(err) = write_chunk_with_retry(&db, &flush_buffer).await {
+                    if let Err(err) = write_chunk_with_retry(&db, &flush_buffer, &state).await {
                         error!("Could not flush messages: {err}");
                     }
 
@@ -115,9 +123,13 @@ pub async fn create_writer(
     Ok((tx, flush_buffer_clone, handle))
 }
 
-async fn write_chunk_with_retry(db: &Client, buffer: &FlushBuffer) -> anyhow::Result<()> {
+async fn write_chunk_with_retry(
+    db: &Client,
+    buffer: &FlushBuffer,
+    state: &OperationalState,
+) -> anyhow::Result<()> {
     for attempt in 1..=RETRY_COUNT {
-        match write_chunk(db, buffer).await {
+        match write_chunk(db, buffer, state).await {
             Ok(()) => {
                 if attempt > 1 {
                     debug!("Insert succeeded on attempt {attempt}");
@@ -135,26 +147,43 @@ async fn write_chunk_with_retry(db: &Client, buffer: &FlushBuffer) -> anyhow::Re
     ))
 }
 
-async fn write_chunk(db: &Client, buffer: &FlushBuffer) -> anyhow::Result<()> {
+async fn write_chunk(
+    db: &Client,
+    buffer: &FlushBuffer,
+    state: &OperationalState,
+) -> anyhow::Result<()> {
     let messages_read_guard = buffer.messages.read().await;
+    let messages = messages_read_guard
+        .iter()
+        .filter(|message| state.is_loggable(&message.channel_id, &message.user_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    drop(messages_read_guard);
+
+    if messages.is_empty() {
+        buffer.messages.write().await.clear();
+        BATCH_MSG_COUNT_GAGUE.set(0);
+        return Ok(());
+    }
 
     let started_at = Instant::now();
 
-    let mut insert = db.insert(MESSAGES_STRUCTURED_TABLE)?;
-    for message in messages_read_guard.iter() {
+    let mut insert = db
+        .insert::<StructuredMessage<'static>>(MESSAGES_STRUCTURED_TABLE)
+        .await?;
+    for message in &messages {
         insert.write(message).await.context("Could not write row")?;
     }
-    drop(messages_read_guard);
 
     let mut messages_write_guard = buffer.messages.write().await;
     insert.end().await.context("Could not end insert")?;
 
     debug!(
         "{} messages have been inserted (took {}ms)",
-        messages_write_guard.len(),
+        messages.len(),
         started_at.elapsed().as_millis()
     );
-    BATCH_MSG_COUNT_GAGUE.set(messages_write_guard.len().try_into().unwrap());
+    BATCH_MSG_COUNT_GAGUE.set(messages.len().try_into().unwrap());
     messages_write_guard.clear();
 
     Ok(())

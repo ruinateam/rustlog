@@ -7,7 +7,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use chrono::Utc;
 use lazy_static::lazy_static;
-use prometheus::{register_int_counter_vec, IntCounterVec};
+use prometheus::{register_int_counter, register_int_counter_vec, IntCounter, IntCounterVec};
 use std::time::Duration;
 use tokio::{
     sync::mpsc::{Receiver, Sender},
@@ -36,6 +36,11 @@ lazy_static! {
         "rustlog_messages_received",
         "How many messages were written",
         &["channel_id"]
+    )
+    .unwrap();
+    static ref FIREHOSE_MESSAGES_PUBLISHED: IntCounter = register_int_counter!(
+        "rustlog_firehose_messages_published_total",
+        "Messages accepted by the live firehose after the writer queue accepted them"
     )
     .unwrap();
 }
@@ -77,7 +82,7 @@ impl Bot {
         let join_client = client.clone();
         tokio::spawn(async move {
             loop {
-                let channel_ids = app.config.channels.read().unwrap().clone();
+                let channel_ids = app.state.channel_ids();
 
                 let interval = match app
                     .get_users(Vec::from_iter(channel_ids), vec![], true)
@@ -158,10 +163,7 @@ impl Bot {
         if let ServerMessage::Privmsg(privmsg) = &msg {
             trace!("Processing message {}", privmsg.message_text);
             if let Some(cmd) = privmsg.message_text.strip_prefix(COMMAND_PREFIX) {
-                if let Err(err) = self
-                    .handle_command(cmd, client, &privmsg.sender.id, &privmsg.sender.login)
-                    .await
-                {
+                if let Err(err) = self.handle_command(cmd, client, &privmsg.sender.id).await {
                     warn!("Could not handle command {cmd}: {err:#}");
                 }
             }
@@ -172,17 +174,17 @@ impl Bot {
         Ok(())
     }
 
-    fn check_admin(&self, user_login: &str) -> anyhow::Result<()> {
+    fn check_admin(&self, user_id: &str) -> anyhow::Result<()> {
         if self
             .app
             .config
             .admins
             .iter()
-            .any(|login| login == user_login)
+            .any(|admin_id| admin_id == user_id)
         {
             Ok(())
         } else {
-            Err(anyhow!("User {user_login} is not an admin"))
+            Err(anyhow!("User {user_id} is not an admin"))
         }
     }
 
@@ -205,7 +207,7 @@ impl Bot {
                 .unwrap_or_else(|| Utc::now().timestamp_millis().try_into().unwrap());
             let user_id = maybe_user_id.unwrap_or_default().to_owned();
 
-            if self.app.config.opt_out.contains_key(&user_id) {
+            if !self.app.state.is_loggable(channel_id, &user_id) {
                 return Ok(());
             }
 
@@ -218,7 +220,11 @@ impl Bot {
             };
             match StructuredMessage::from_unstructured(&unstructured) {
                 Ok(msg) => {
-                    self.writer_tx.send(msg.into_owned()).await?;
+                    let msg = msg.into_owned();
+                    self.writer_tx.send(msg.clone()).await?;
+                    if self.app.firehose_tx.send(msg).is_ok() {
+                        FIREHOSE_MESSAGES_PUBLISHED.inc();
+                    }
                 }
                 Err(err) => {
                     error!("Could not convert message {unstructured:?} to be logged: {err}");
@@ -234,7 +240,6 @@ impl Bot {
         cmd: &str,
         client: &TwitchClient<C>,
         sender_id: &str,
-        sender_login: &str,
     ) -> anyhow::Result<()> {
         debug!("Processing command {cmd}");
         let mut split = cmd.split_whitespace();
@@ -243,17 +248,17 @@ impl Bot {
 
             match action {
                 "join" => {
-                    self.check_admin(sender_login)?;
+                    self.check_admin(sender_id)?;
                     self.update_channels(client, &args, ChannelAction::Join)
                         .await?
                 }
                 "leave" | "part" => {
-                    self.check_admin(sender_login)?;
+                    self.check_admin(sender_id)?;
                     self.update_channels(client, &args, ChannelAction::Part)
                         .await?
                 }
                 "optout" => {
-                    self.optout_user(&args, sender_login, sender_id).await?;
+                    self.optout_user(&args, sender_id).await?;
                 }
                 _ => (),
             }
@@ -262,18 +267,13 @@ impl Bot {
         Ok(())
     }
 
-    async fn optout_user(
-        &self,
-        args: &[&str],
-        sender_login: &str,
-        sender_id: &str,
-    ) -> anyhow::Result<()> {
+    async fn optout_user(&self, args: &[&str], sender_id: &str) -> anyhow::Result<()> {
         let arg = args.first().context("No optout code provided")?;
         if self.app.optout_codes.remove(*arg).is_some() {
             self.app.optout_user(sender_id).await?;
 
             Ok(())
-        } else if self.check_admin(sender_login).is_ok() {
+        } else if self.check_admin(sender_id).is_ok() {
             let user_id = self.app.get_user_id_by_name(arg).await?;
 
             self.app.optout_user(&user_id).await?;
@@ -303,26 +303,20 @@ impl Bot {
             )
             .await?;
 
-        {
-            let mut config_channels = self.app.config.channels.write().unwrap();
-
-            for (channel_id, channel_name) in channels {
-                match action {
-                    ChannelAction::Join => {
-                        info!("Joining channel {channel_name}");
-                        config_channels.insert(channel_id);
-                        client.join(channel_name)?;
-                    }
-                    ChannelAction::Part => {
-                        info!("Parting channel {channel_name}");
-                        config_channels.remove(&channel_id);
-                        client.part(channel_name);
-                    }
+        for (channel_id, channel_name) in channels {
+            match action {
+                ChannelAction::Join => {
+                    info!("Joining channel {channel_name}");
+                    self.app.state.enable_channel(&channel_id).await?;
+                    client.join(channel_name)?;
+                }
+                ChannelAction::Part => {
+                    info!("Parting channel {channel_name}");
+                    self.app.state.disable_channel(&channel_id).await?;
+                    client.part(channel_name);
                 }
             }
         }
-
-        self.app.config.save()?;
 
         Ok(())
     }

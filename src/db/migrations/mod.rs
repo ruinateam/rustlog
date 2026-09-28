@@ -1,16 +1,18 @@
 mod migratable;
+mod state;
 mod structured;
 mod username_history;
 
-use crate::Result;
+use crate::{config::Config, Result};
 use clickhouse::Client;
+use state::StateMigration;
 use structured::StructuredMigration;
 use tracing::{debug, info};
 use username_history::UsernameHistoryMigration;
 
 use self::migratable::Migratable;
 
-pub async fn run(db: &Client, db_name: &str) -> Result<()> {
+pub async fn run(db: &Client, db_name: &str, config: &Config) -> Result<()> {
     create_migrations_table(db).await?;
 
     run_migration(
@@ -74,6 +76,13 @@ String CODEC(ZSTD(10))
     run_migration(db, "6_structured_message", StructuredMigration { db_name }).await?;
 
     run_migration(db, "7_username_history", UsernameHistoryMigration).await?;
+
+    run_migration(
+        db,
+        "8_channel_membership_and_opt_out_state",
+        StateMigration { config },
+    )
+    .await?;
 
     Ok(())
 }

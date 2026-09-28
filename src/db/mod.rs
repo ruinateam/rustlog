@@ -18,12 +18,16 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use clickhouse::{query::RowCursor, Client, Row};
-use std::collections::HashMap;
 use rand::{rng, seq::IteratorRandom};
 use schema::StructuredMessage;
+use std::collections::HashMap;
 use tracing::debug;
 
 const CHANNEL_MULTI_QUERY_SIZE_DAYS: i64 = 14;
+
+// Deletion mutations are asynchronous, so every read excludes opt-outs until
+// ClickHouse has physically removed their historical rows.
+const ACTIVE_USER_OPT_OUT_PREDICATE: &str = "user_id NOT IN (SELECT subject_id FROM (SELECT subject_id, argMax(opted_out, revision) AS opted_out FROM opt_out_state WHERE scope IN ('user', 'legacy') GROUP BY scope, subject_id) WHERE opted_out = 1)";
 
 pub async fn read_channel(
     db: &Client,
@@ -37,11 +41,11 @@ pub async fn read_channel(
 
     let suffix = if params.reverse { "DESC" } else { "ASC" };
 
-    let mut query = format!("SELECT ?fields FROM message_structured WHERE channel_id = ? AND timestamp >= ? AND timestamp < ? ORDER BY timestamp {suffix}");
+    let mut query = format!("SELECT ?fields FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp >= ? AND timestamp < ? ORDER BY timestamp {suffix}");
 
     if to - from > Duration::days(CHANNEL_MULTI_QUERY_SIZE_DAYS) {
         let count = db
-            .query("SELECT count() FROM (SELECT timestamp FROM message_structured WHERE channel_id = ? AND timestamp >= ? AND timestamp < ? LIMIT 1)")
+            .query(&format!("SELECT count() FROM (SELECT timestamp FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp >= ? AND timestamp < ? LIMIT 1)"))
             .bind(channel_id)
             .bind(from.timestamp_millis() as f64 / 1000.0)
             .bind(to.timestamp_millis() as f64 / 1000.0)
@@ -119,7 +123,7 @@ pub async fn read_user(
         FlushBufferResponse::new(flush_buffer, channel_id, Some(user_id), params, (from, to)).await;
 
     let suffix = if params.reverse { "DESC" } else { "ASC" };
-    let mut query = format!("SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND timestamp >= ? AND timestamp < ? ORDER BY timestamp {suffix}");
+    let mut query = format!("SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp >= ? AND timestamp < ? ORDER BY timestamp {suffix}");
     apply_limit_offset(&mut query, &buffer_response);
 
     let cursor = db
@@ -160,6 +164,7 @@ pub async fn read_available_channel_logs(
                 toDayOfMonth(toTimeZone(timestamp, 'UTC'))  AS day
             FROM message_structured
             WHERE channel_id = ?
+              AND {ACTIVE_USER_OPT_OUT_PREDICATE}
               AND timestamp >= toDateTime('{MIN_VALID_TIMESTAMP}')
             GROUP BY year, month, day
             ORDER BY year DESC, month DESC, day DESC"
@@ -195,6 +200,7 @@ pub async fn read_available_user_logs(
                 toMonth(toTimeZone(timestamp, 'UTC')) AS month
             FROM message_structured
             WHERE channel_id = ? AND user_id = ?
+              AND {ACTIVE_USER_OPT_OUT_PREDICATE}
               AND timestamp >= toDateTime('{MIN_VALID_TIMESTAMP}')
             GROUP BY year, month
             ORDER BY year DESC, month DESC"
@@ -225,7 +231,7 @@ pub async fn read_random_user_line(
     user_id: &str,
 ) -> Result<StructuredMessage<'static>> {
     let total_count = db
-        .query("SELECT count(*) FROM message_structured WHERE channel_id = ? AND user_id = ? ")
+        .query(&format!("SELECT count(*) FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE}"))
         .bind(channel_id)
         .bind(user_id)
         .fetch_one::<u64>()
@@ -240,20 +246,24 @@ pub async fn read_random_user_line(
         (0..total_count).choose(&mut rng).ok_or(Error::NotFound)
     }?;
 
-    let msg = db
+    let mut cursor = db
         .query(
             "WITH
-            (SELECT timestamp FROM message_structured WHERE channel_id = ? AND user_id = ? LIMIT 1 OFFSET ?)
+            (SELECT timestamp FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} LIMIT 1 OFFSET ?)
             AS random_timestamp
-            SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND timestamp = random_timestamp",
+            SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp = random_timestamp",
         )
         .bind(channel_id)
         .bind(user_id)
         .bind(offset)
         .bind(channel_id)
         .bind(user_id)
-        .fetch_optional::<StructuredMessage>()
+        .fetch::<StructuredMessage<'static>>()?;
+
+    let msg = cursor
+        .next()
         .await?
+        .map(StructuredMessage::into_owned)
         .ok_or(Error::NotFound)?;
 
     Ok(msg)
@@ -264,7 +274,7 @@ pub async fn read_random_channel_line(
     channel_id: &str,
 ) -> Result<StructuredMessage<'static>> {
     let total_count = db
-        .query("SELECT count(*) FROM message_structured WHERE channel_id = ? ")
+        .query(&format!("SELECT count(*) FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE}"))
         .bind(channel_id)
         .fetch_one::<u64>()
         .await?;
@@ -278,29 +288,36 @@ pub async fn read_random_channel_line(
         (0..total_count).choose(&mut rng).ok_or(Error::NotFound)
     }?;
 
-    let msg = db
+    let mut cursor = db
         .query(
             "WITH
-            (SELECT timestamp FROM message_structured WHERE channel_id = ? LIMIT 1 OFFSET ?)
+            (SELECT timestamp FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} LIMIT 1 OFFSET ?)
             AS random_timestamp
-            SELECT * FROM message_structured WHERE channel_id = ? AND timestamp = random_timestamp",
+            SELECT * FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp = random_timestamp",
         )
         .bind(channel_id)
         .bind(offset)
         .bind(channel_id)
-        .fetch_optional::<StructuredMessage>()
+        .fetch::<StructuredMessage<'static>>()?;
+
+    let msg = cursor
+        .next()
         .await?
+        .map(StructuredMessage::into_owned)
         .ok_or(Error::NotFound)?;
 
     Ok(msg)
 }
 
-pub async fn delete_user_logs(_db: &Client, _user_id: &str) -> Result<()> {
-    // info!("Deleting all logs for user {user_id}");
-    // db.query("ALTER TABLE message DELETE WHERE user_id = ?")
-    //     .bind(user_id)
-    //     .execute()
-    //     .await?;
+pub async fn delete_user_logs(db: &Client, user_id: &str) -> Result<()> {
+    db.query("ALTER TABLE message_structured DELETE WHERE user_id = ?")
+        .bind(user_id)
+        .execute()
+        .await?;
+    db.query("ALTER TABLE username_history DELETE WHERE user_id = ?")
+        .bind(user_id)
+        .execute()
+        .await?;
     Ok(())
 }
 
@@ -315,7 +332,7 @@ pub async fn search_user_logs(
 
     let suffix = if params.reverse { "DESC" } else { "ASC" };
 
-    let mut query = format!("SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND positionCaseInsensitive(text, ?) != 0 ORDER BY timestamp {suffix}");
+    let mut query = format!("SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND positionCaseInsensitive(text, ?) != 0 ORDER BY timestamp {suffix}");
     apply_limit_offset(&mut query, &buffer_response);
 
     let cursor = db
@@ -364,7 +381,7 @@ pub async fn get_day_windows(
 ) -> Result<Vec<WindowsAggRow>> {
     // Aggregate fixed windows in MSK (Europe/Moscow) for a specific day.
     let rows = db
-        .query(
+        .query(&format!(
             "
             SELECT
                 user_id,
@@ -375,15 +392,16 @@ pub async fn get_day_windows(
                 countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 15 MINUTE)) AS w15,
                 countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 30 MINUTE)) AS w30,
                 countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 60 MINUTE)) AS w60
-            FROM message_structured
-            WHERE channel_id = ?
-              AND user_id != ''
-              AND toYYYYMMDD(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
+             FROM message_structured
+             WHERE channel_id = ?
+               AND user_id != ''
+               AND {ACTIVE_USER_OPT_OUT_PREDICATE}
+               AND toYYYYMMDD(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
             GROUP BY user_id
             HAVING w1 > 0 OR w5 > 0 OR w15 > 0 OR w30 > 0 OR w60 > 0
             ORDER BY w1 DESC
             ",
-        )
+        ))
         .bind(channel_id)
         .bind(yyyymmdd)
         .fetch_all::<WindowsAggRow>()
@@ -400,7 +418,28 @@ pub async fn get_day_windows_with_ranges(
     mode_online: bool,
 ) -> Result<HashMap<String, WindowsAgg>> {
     if ranges.is_empty() {
-        return Ok(HashMap::new());
+        if mode_online {
+            return Ok(HashMap::new());
+        }
+
+        return Ok(get_day_windows(db, channel_id, yyyymmdd)
+            .await?
+            .into_iter()
+            .map(|row| {
+                (
+                    row.user_id,
+                    WindowsAgg {
+                        messages: row.messages,
+                        uniq_messages: row.uniq_messages,
+                        w1: row.w1,
+                        w5: row.w5,
+                        w15: row.w15,
+                        w30: row.w30,
+                        w60: row.w60,
+                    },
+                )
+            })
+            .collect());
     }
 
     let ranges_sql = ranges
@@ -437,12 +476,13 @@ pub async fn get_day_windows_with_ranges(
         (
             SELECT
                 user_id,
-                toTimeZone(toDateTime(timestamp), 'Europe/Moscow') AS ts,
+                toTimeZone(timestamp, 'Europe/Moscow') AS ts,
                 text
-            FROM message_structured
-            WHERE channel_id = ?
-              AND user_id != ''
-              AND toYYYYMMDD(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
+             FROM message_structured
+             WHERE channel_id = ?
+               AND user_id != ''
+               AND {ACTIVE_USER_OPT_OUT_PREDICATE}
+               AND toYYYYMMDD(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
         )
         GROUP BY user_id
         HAVING w1 > 0 OR w5 > 0 OR w15 > 0 OR w30 > 0 OR w60 > 0
@@ -484,7 +524,7 @@ pub async fn get_month_windows(
 ) -> Result<Vec<WindowsAggRow>> {
     // Aggregate fixed windows in MSK (Europe/Moscow) for a specific month.
     let rows = db
-        .query(
+        .query(&format!(
             "
             SELECT
                 user_id,
@@ -495,15 +535,16 @@ pub async fn get_month_windows(
                 countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 15 MINUTE)) AS w15,
                 countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 30 MINUTE)) AS w30,
                 countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 60 MINUTE)) AS w60
-            FROM message_structured
-            WHERE channel_id = ?
-              AND user_id != ''
-              AND toYYYYMM(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
+             FROM message_structured
+             WHERE channel_id = ?
+               AND user_id != ''
+               AND {ACTIVE_USER_OPT_OUT_PREDICATE}
+               AND toYYYYMM(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
             GROUP BY user_id
             HAVING w1 > 0 OR w5 > 0 OR w15 > 0 OR w30 > 0 OR w60 > 0
             ORDER BY w1 DESC
             ",
-        )
+        ))
         .bind(channel_id)
         .bind(yyyymm)
         .fetch_all::<WindowsAggRow>()
@@ -520,7 +561,28 @@ pub async fn get_month_windows_with_ranges(
     mode_online: bool,
 ) -> Result<HashMap<String, WindowsAgg>> {
     if ranges.is_empty() {
-        return Ok(HashMap::new());
+        if mode_online {
+            return Ok(HashMap::new());
+        }
+
+        return Ok(get_month_windows(db, channel_id, yyyymm)
+            .await?
+            .into_iter()
+            .map(|row| {
+                (
+                    row.user_id,
+                    WindowsAgg {
+                        messages: row.messages,
+                        uniq_messages: row.uniq_messages,
+                        w1: row.w1,
+                        w5: row.w5,
+                        w15: row.w15,
+                        w30: row.w30,
+                        w60: row.w60,
+                    },
+                )
+            })
+            .collect());
     }
 
     let ranges_sql = ranges
@@ -557,12 +619,13 @@ pub async fn get_month_windows_with_ranges(
         (
             SELECT
                 user_id,
-                toTimeZone(toDateTime(timestamp), 'Europe/Moscow') AS ts,
+                toTimeZone(timestamp, 'Europe/Moscow') AS ts,
                 text
-            FROM message_structured
-            WHERE channel_id = ?
-              AND user_id != ''
-              AND toYYYYMM(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
+             FROM message_structured
+             WHERE channel_id = ?
+               AND user_id != ''
+               AND {ACTIVE_USER_OPT_OUT_PREDICATE}
+               AND toYYYYMM(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
         )
         GROUP BY user_id
         HAVING w1 > 0 OR w5 > 0 OR w15 > 0 OR w30 > 0 OR w60 > 0
@@ -602,7 +665,9 @@ pub async fn get_channel_stats(
     channel_id: &str,
     range_params: LogRangeParams,
 ) -> Result<(u64, Vec<StatsRow>)> {
-    let mut query = "SELECT count(*) FROM message_structured WHERE channel_id = ?".to_owned();
+    let mut query = format!(
+        "SELECT count(*) FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE}"
+    );
 
     if range_params.range().is_some() {
         query.push_str(" AND timestamp >= ? AND timestamp < ?");
@@ -618,8 +683,9 @@ pub async fn get_channel_stats(
 
     let total_count = query.fetch_one().await?;
 
-    let mut query =
-        "SELECT count(*) as cnt, user_id FROM message_structured WHERE channel_id = ? AND user_id != ''".to_owned();
+    let mut query = format!(
+        "SELECT count(*) as cnt, user_id FROM message_structured WHERE channel_id = ? AND user_id != '' AND {ACTIVE_USER_OPT_OUT_PREDICATE}"
+    );
 
     if range_params.range().is_some() {
         query.push_str(" AND timestamp >= ? AND timestamp < ?");
@@ -647,8 +713,9 @@ pub async fn get_user_stats(
     user_login: Option<String>,
     range_params: LogRangeParams,
 ) -> Result<UserLogsStats> {
-    let mut query =
-        "SELECT count(*) FROM message_structured WHERE channel_id = ? AND user_id = ?".to_owned();
+    let mut query = format!(
+        "SELECT count(*) FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE}"
+    );
 
     if range_params.range().is_some() {
         query.push_str(" AND timestamp >= ? AND timestamp < ?");

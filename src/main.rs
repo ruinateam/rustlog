@@ -5,10 +5,13 @@ mod config;
 mod db;
 mod error;
 mod logs;
+mod maintenance;
 mod migrator;
-mod web;
 mod mirror;
+mod state;
 mod supabase;
+mod tiers;
+mod web;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 pub type ShutdownRx = watch::Receiver<()>;
@@ -19,20 +22,24 @@ use args::{Args, Command};
 use clap::Parser;
 use config::Config;
 use db::{setup_db, writer::create_writer};
-use futures::{future::try_join_all, stream::FuturesUnordered, StreamExt};
+use futures::future::try_join_all;
+#[cfg(unix)]
+use futures::{stream::FuturesUnordered, StreamExt};
 use migrator::Migrator;
 use mimalloc::MiMalloc;
+use state::OperationalState;
 use std::{
     env,
     sync::Arc,
     time::{Duration, Instant},
 };
+#[cfg(unix)]
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::{
-    signal::unix::{signal, SignalKind},
-    sync::{mpsc, watch},
-    time::timeout,
+    sync::{broadcast, mpsc, watch, RwLock},
+    time::{sleep, timeout},
 };
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
 use twitch_api::{
     twitch_oauth2::{AppAccessToken, Scope},
@@ -43,6 +50,8 @@ use twitch_irc::login::StaticLoginCredentials;
 use crate::app::cache::UsersCache;
 
 const SHUTDOWN_TIMEOUT_SECONDS: u64 = 8;
+const TOKEN_RETRY_INTERVAL_SECONDS: u64 = 5;
+const TOKEN_REFRESH_INTERVAL_SECONDS: u64 = 3600;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -60,7 +69,8 @@ async fn main() -> anyhow::Result<()> {
         .with_ansi(use_ansi)
         .init();
 
-    let config = Config::load()?;
+    let args = Args::parse();
+    let config = Config::load(&args.config_path)?;
     let mut db = clickhouse::Client::default()
         .with_url(&config.clickhouse_url)
         .with_database(&config.clickhouse_db)
@@ -74,9 +84,7 @@ async fn main() -> anyhow::Result<()> {
         db = db.with_password(password);
     }
 
-    let args = Args::parse();
-
-    setup_db(&db, &config.clickhouse_db)
+    setup_db(&db, &config.clickhouse_db, &config)
         .await
         .context("Could not run DB migrations")?;
 
@@ -95,7 +103,75 @@ async fn main() -> anyhow::Result<()> {
             month,
             day,
             batch,
-        }) => mirror::run(db, base_url, local_cache, channel, year, month, day, batch).await,
+            http_concurrency,
+            proxy,
+            rps,
+        }) => {
+            mirror::run(
+                db,
+                base_url,
+                local_cache,
+                channel,
+                year,
+                month,
+                day,
+                batch,
+                http_concurrency,
+                proxy,
+                rps,
+            )
+            .await
+        }
+        Some(Command::FillMissing {
+            channel,
+            year,
+            api_base,
+            batch,
+            http_concurrency,
+            proxy,
+            rps,
+            exclude_instance,
+            dry_run,
+            repair_existing,
+            deep,
+        }) => {
+            maintenance::fill_missing(
+                db,
+                maintenance::FillMissingOptions {
+                    channels: channel,
+                    year,
+                    api_base,
+                    batch,
+                    http_concurrency,
+                    proxies: proxy,
+                    rps,
+                    exclude_instances: exclude_instance,
+                    dry_run,
+                    repair_existing,
+                    deep,
+                },
+            )
+            .await
+        }
+        Some(Command::CleanupDuplicateIds {
+            channel,
+            year,
+            execute,
+            sample_limit,
+            wait_timeout,
+        }) => {
+            maintenance::cleanup_duplicate_ids(
+                db,
+                maintenance::CleanupDuplicateIdsOptions {
+                    channels: channel,
+                    year,
+                    execute,
+                    sample_limit,
+                    wait_timeout,
+                },
+            )
+            .await
+        }
     }
 }
 
@@ -103,27 +179,38 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
     let mut shutdown_rx = listen_shutdown().await;
 
     let helix_client: HelixClient<reqwest::Client> = HelixClient::default();
-    let token = generate_token(&config).await?;
+    let token = Arc::new(RwLock::new(None));
+    let config = Arc::new(config);
+
+    let db = Arc::new(db);
+    let state = OperationalState::load(db.clone())
+        .await
+        .context("Could not load operational state")?;
 
     let (writer_tx, flush_buffer, mut writer_handle) = create_writer(
         db.clone(),
         shutdown_rx.clone(),
         config.clickhouse_flush_interval,
+        state.clone(),
     )
     .await?;
+    let (firehose_tx, _) = broadcast::channel(1024);
 
     let app = App {
         helix_client,
-        token: Arc::new(token),
+        token: token.clone(),
         users: UsersCache::default(),
-        config: Arc::new(config),
-        db: Arc::new(db),
+        config: config.clone(),
+        db,
+        state,
         optout_codes: Arc::default(),
         flush_buffer,
+        firehose_tx,
     };
 
     let (bot_tx, bot_rx) = mpsc::channel(1);
 
+    let mut token_handle = tokio::spawn(refresh_token_loop(config, token, shutdown_rx.clone()));
     let login_credentials = StaticLoginCredentials::anonymous();
     let mut bot_handle = tokio::spawn(bot::run(
         login_credentials,
@@ -140,7 +227,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
 
             let started_at = Instant::now();
 
-            let shutdown_future = try_join_all([bot_handle, web_handle, writer_handle]);
+            let shutdown_future = try_join_all([bot_handle, web_handle, writer_handle, token_handle]);
             match timeout(Duration::from_secs(SHUTDOWN_TIMEOUT_SECONDS), shutdown_future).await {
                 Ok(Ok(_)) => {
                     debug!("Cleanup finished in {}ms", started_at.elapsed().as_millis());
@@ -161,6 +248,9 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
         }
         _ = &mut writer_handle => {
             Err(anyhow!("Writer task exited unexpectedly"))
+        }
+        _ = &mut token_handle => {
+            Err(anyhow!("Token refresh task exited unexpectedly"))
         }
     }
 }
@@ -189,6 +279,46 @@ async fn generate_token(config: &Config) -> anyhow::Result<AppAccessToken> {
     Ok(token)
 }
 
+async fn refresh_token_loop(
+    config: Arc<Config>,
+    token: Arc<RwLock<Option<AppAccessToken>>>,
+    mut shutdown_rx: ShutdownRx,
+) {
+    loop {
+        tokio::select! {
+            result = generate_token(&config) => {
+                match result {
+                    Ok(new_token) => {
+                        *token.write().await = Some(new_token);
+                        tokio::select! {
+                            _ = sleep(Duration::from_secs(TOKEN_REFRESH_INTERVAL_SECONDS)) => {}
+                            _ = shutdown_rx.changed() => {
+                                debug!("Shutting down token refresh task");
+                                break;
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        warn!("Could not generate Twitch app token: {err:#}; retrying in {TOKEN_RETRY_INTERVAL_SECONDS}s");
+                        tokio::select! {
+                            _ = sleep(Duration::from_secs(TOKEN_RETRY_INTERVAL_SECONDS)) => {}
+                            _ = shutdown_rx.changed() => {
+                                debug!("Shutting down token refresh task");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            _ = shutdown_rx.changed() => {
+                debug!("Shutting down token refresh task");
+                break;
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
 async fn listen_shutdown() -> watch::Receiver<()> {
     let shutdown_signals = [SignalKind::interrupt(), SignalKind::terminate()];
     let mut futures = FuturesUnordered::new();
@@ -207,6 +337,20 @@ async fn listen_shutdown() -> watch::Receiver<()> {
         futures.next().await;
         info!("Received shutdown signal");
         tx.send(()).unwrap();
+    });
+
+    rx
+}
+
+#[cfg(not(unix))]
+async fn listen_shutdown() -> watch::Receiver<()> {
+    let (tx, rx) = watch::channel(());
+
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            info!("Received shutdown signal");
+            let _ = tx.send(());
+        }
     });
 
     rx
