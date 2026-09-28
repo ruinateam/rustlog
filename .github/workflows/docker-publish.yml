@@ -31,8 +31,8 @@ jobs:
         with:
           submodules: true
 
-      # rust-embed reads web/dist at compile time, so the frontend build must
-      # run before any cargo command.
+      # The frontend is built so the `embed-frontend` feature can be checked
+      # below; plain cargo commands do not need it.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -58,6 +58,9 @@ jobs:
 
       - name: Check and test Rust
         run: cargo test
+
+      - name: Check Rust with the embedded frontend
+        run: cargo check --features embed-frontend
 
   build-push:
     runs-on: ubuntu-latest

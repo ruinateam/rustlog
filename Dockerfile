@@ -28,10 +28,10 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 RUN rustup target add "$(cat /target.txt)"
 
 COPY --from=planner /app/recipe.json recipe.json
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook --target "$(cat /target.txt)" --release --recipe-path recipe.json
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook --target "$(cat /target.txt)" --release --features embed-frontend --recipe-path recipe.json
 COPY . .
 COPY --from=frontend /src/web web/
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release --features embed-frontend
 RUN mv "./target/$(cat /target.txt)/release" "/output"
 
 FROM debian:bookworm-slim AS runtime
