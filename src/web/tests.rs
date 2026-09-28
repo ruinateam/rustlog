@@ -222,8 +222,6 @@ async fn run_cases(cases: Vec<Case>) {
     server.stop().await;
 }
 
-// TODO: `GET /channels` panics without a Twitch token (`unwrap` in
-// `handlers::get_channels`); cover it once that is fixed.
 #[tokio::test]
 #[ignore = "needs ClickHouse, run with `just test-integration`"]
 async fn legacy_logs() {
@@ -351,6 +349,8 @@ async fn legacy_misc() {
         Case::get("optout", "/optout")
             .method(Method::POST)
             .without_body(),
+        Case::get("channels", "/channels"),
+        Case::get("channels_trailing_slash", "/channels/"),
         Case::get("channels_put", "/channels").method(Method::PUT),
         Case::get("metrics", "/metrics").without_body(),
         Case::get("docs", "/docs").without_body(),

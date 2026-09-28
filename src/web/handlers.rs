@@ -42,13 +42,12 @@ use tracing::{debug, error, warn};
 // use std::process::Command; // not used
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 
-pub async fn get_channels(app: State<App>) -> impl IntoApiResponse {
+pub async fn get_channels(app: State<App>) -> Result<impl IntoApiResponse> {
     let channel_ids = app.state.channel_ids();
 
     let channels = app
         .get_users(Vec::from_iter(channel_ids), vec![], false)
-        .await
-        .unwrap();
+        .await?;
 
     let json = Json(ChannelsList {
         channels: channels
@@ -56,7 +55,7 @@ pub async fn get_channels(app: State<App>) -> impl IntoApiResponse {
             .map(|(user_id, name)| Channel { name, user_id })
             .collect(),
     });
-    (no_cache_header(), json)
+    Ok((no_cache_header(), json))
 }
 
 pub async fn get_chat_badges(

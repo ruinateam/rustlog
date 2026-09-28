@@ -236,7 +236,33 @@
     "/channels": {
       "get": {
         "summary": "List logged channels",
-        "description": "Return the channel logins and Twitch ids currently configured for live logging."
+        "description": "Return the channel logins and Twitch ids currently configured for live logging.",
+        "responses": {
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Channel or user has opted out",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "The requested data was not found",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "An internal server error occured",
+            "content": {
+              "text/plain": {}
+            }
+          }
+        }
       }
     },
     "/list": {
