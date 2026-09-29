@@ -1,9 +1,10 @@
-FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
+# Keep the bun version in sync with `packageManager` in web/package.json.
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.2-alpine AS frontend
 WORKDIR /src/web
-COPY web/package.json web/yarn.lock ./
-RUN yarn install --frozen-lockfile --ignore-optional
+COPY web/package.json web/bun.lock ./
+RUN bun install --frozen-lockfile
 COPY web .
-RUN yarn build
+RUN bun run build
 
 FROM --platform=$BUILDPLATFORM rust:1.98-bookworm AS chef
 WORKDIR /app

@@ -17,7 +17,7 @@
 
 ```bash
 # Склонируйте и перейдите в директорию
-git clone --recurse-submodules https://github.com/ruinateam/rustlog.git
+git clone https://github.com/ruinateam/rustlog.git
 cd rustlog
 
 # Скопируйте настройки и заполните поля 
@@ -39,15 +39,12 @@ Docker поднимает ClickHouse `26.5.6.64` с healthcheck-ом, монти
 
 ## Локальная сборка
 
-> [!NOTE]
-> Если репозиторий клонирован без `--recurse-submodules`, сначала выполните `git submodule update --init --recursive`.
-
 Требования для сборки:
 
 - [rustup](https://rustup.rs): нужная версия Rust ставится автоматически из `rust-toolchain.toml`;
 - [just](https://just.systems), [cargo-nextest](https://nexte.st) и [cargo-deny](https://embarkstudios.github.io/cargo-deny/) (`cargo install --locked just cargo-nextest cargo-deny`);
 - Docker с Compose, чтобы поднимать локальный ClickHouse;
-- Node.js 24+ и yarn (`corepack enable`), только для сборки веб-интерфейса.
+- [bun](https://bun.sh) (версия указана в `packageManager` в `web/package.json`), только для веб-интерфейса.
 
 Все частые команды собраны в `Justfile`, их список выводит `just`:
 
@@ -60,7 +57,19 @@ just build
 ./target/release/rustlog --config config.json
 ```
 
-Веб-интерфейс встраивается в исполняемый файл только с feature `embed-frontend`. Без неё бэкенд собирается без Node.js, а вместо веб-интерфейса отдаётся страница-заглушка со ссылками на документацию API.
+Веб-интерфейс встраивается в исполняемый файл только с feature `embed-frontend`. Без неё бэкенд собирается без bun, а вместо веб-интерфейса отдаётся страница-заглушка со ссылками на документацию API.
+
+### Веб-интерфейс
+
+Лежит в [`web/`](web): Vue 3, Vite, TypeScript, Tailwind CSS и компоненты [shadcn-vue](https://www.shadcn-vue.com) (в `web/src/components/ui`, правятся как свои), данные — через TanStack Query, интерфейс на русском и английском. Он работает только с API v2; типы запросов и ответов генерируются из [`docs/openapi/v2.json`](docs/openapi/v2.json) в `web/src/api/schema.d.ts` командой `just web-api-types`, и CI проверяет, что они не устарели.
+
+```bash
+# Dev-сервер с горячей перезагрузкой; API проксируется на бэкенд с localhost:8025
+# (другой адрес задаёт RUSTLOG_BACKEND_URL)
+just web-dev
+```
+
+Пути страниц состоят из одного сегмента, а состояние хранится в query (`/logs?channel=…&date=…`): более длинные пути занимает старое API (`/{channel_id_type}/{channel}` и т. д.).
 
 Если вы планируете отправлять изменения, запустите те же проверки, что и CI:
 
@@ -71,7 +80,7 @@ just check
 # Integration-тесты HTTP API на локальном ClickHouse (нужен .env, как для docker-compose.dev.yml)
 just test-integration
 
-# Проверка типов веб-интерфейса
+# Линтер, проверка типов и тесты веб-интерфейса, актуальность его API-типов
 just web-check
 ```
 

@@ -49,13 +49,25 @@ openapi-check: openapi
     git diff --exit-code -- docs/openapi
     test -z "$(git status --porcelain -- docs/openapi)"
 
+# Run the web frontend with hot reload against the local backend
+web-dev:
+    cd web && bun install --frozen-lockfile && bun run dev
+
 # Build the web frontend into web/dist
 web-build:
-    cd web && yarn install --frozen-lockfile --ignore-optional && yarn build
+    cd web && bun install --frozen-lockfile && bun run build
 
-# Typecheck the web frontend
-web-check:
-    cd web && yarn install --frozen-lockfile --ignore-optional && yarn typecheck
+# Lint, typecheck and test the web frontend
+web-check: web-api-types-check
+    cd web && bun install --frozen-lockfile && bun run check
+
+# Regenerate the API types of the web frontend from the v2 OpenAPI document
+web-api-types:
+    cd web && bun run api-types
+
+# Fail if the API types of the web frontend are out of date
+web-api-types-check: web-api-types
+    git diff --exit-code -- web/src/api/schema.d.ts
 
 # Build a release binary with the embedded frontend
 build: web-build
