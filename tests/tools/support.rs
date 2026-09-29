@@ -3,7 +3,7 @@
 
 use axum::{Router, http::StatusCode, http::Uri, response::IntoResponse};
 use clickhouse::Row;
-use rustlog::{config::Config, storage::setup_db};
+use rustlog::{state::LegacyConfig, storage::setup_db};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
@@ -42,16 +42,9 @@ impl TestDb {
             .expect("could not create the test database");
         let db = root.clone().with_database(&name);
 
-        let config: Config = serde_json::from_value(json!({
-            "clickhouseUrl": url,
-            "clickhouseDb": name,
-            "channels": [],
-            "clientID": "fake",
-            "clientSecret": "fake",
-            "admins": [],
-        }))
-        .unwrap();
-        setup_db(&db, &name, &config).await.unwrap();
+        setup_db(&db, &name, &LegacyConfig::default())
+            .await
+            .unwrap();
 
         Self { db, root, name }
     }

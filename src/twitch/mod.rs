@@ -4,7 +4,7 @@
 pub mod cache;
 mod error;
 
-pub use self::error::{Error, Result};
+pub use self::error::{Error, HelixError, Result};
 
 use self::cache::{BadgesCache, UsersCache};
 use crate::ShutdownRx;

@@ -2,7 +2,10 @@
 
 mod firehose;
 
-use crate::{app::App, bot::BotMessage, web::legacy::error::Error};
+use crate::{
+    app::{App, BotMessage},
+    web::legacy::error::Error,
+};
 use aide::{
     axum::{
         ApiRouter,
@@ -13,13 +16,13 @@ use aide::{
     },
     transform::TransformOperation,
 };
+use axum::http::StatusCode;
 use axum::{
     Extension, Json,
     extract::{Request, State},
     middleware::{self, Next},
     response::{IntoResponse, Response},
 };
-use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::sync::Arc;

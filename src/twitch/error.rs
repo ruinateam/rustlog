@@ -1,5 +1,8 @@
 use twitch_api::helix::ClientRequestError;
 
+/// A failed Helix request.
+pub type HelixError = ClientRequestError<reqwest::Error>;
+
 /// Failure of a Twitch API request.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -7,14 +10,14 @@ pub enum Error {
     #[error("Twitch token is not ready yet")]
     TokenUnavailable,
     #[error(transparent)]
-    Helix(Box<ClientRequestError<reqwest::Error>>),
+    Helix(Box<HelixError>),
     /// Twitch does not know the user.
     #[error("not found")]
     NotFound,
 }
 
-impl From<ClientRequestError<reqwest::Error>> for Error {
-    fn from(error: ClientRequestError<reqwest::Error>) -> Self {
+impl From<HelixError> for Error {
+    fn from(error: HelixError) -> Self {
         Self::Helix(Box::new(error))
     }
 }

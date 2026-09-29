@@ -1,6 +1,6 @@
 use crate::{
     ShutdownRx,
-    app::App,
+    app::{App, BotMessage},
     irc::tags::{extract_channel_and_user_from_raw, extract_raw_timestamp},
     storage::message::{StructuredMessage, UnstructuredMessage},
 };
@@ -24,12 +24,6 @@ const CHANNEL_REJOIN_INTERVAL_SECONDS: u64 = 3600;
 const CHANENLS_REFETCH_RETRY_INTERVAL_SECONDS: u64 = 5;
 
 type TwitchClient<C> = TwitchIRCClient<SecureTCPTransport, C>;
-
-#[derive(Debug)]
-pub enum BotMessage {
-    JoinChannels(Vec<String>),
-    PartChannels(Vec<String>),
-}
 
 static MESSAGES_RECEIVED_COUNTERS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(

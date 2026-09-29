@@ -1,4 +1,3 @@
-use crate::config::Config;
 use crate::storage::Result;
 use clickhouse::{Client, Row};
 use dashmap::DashSet;
@@ -171,7 +170,16 @@ async fn next_revision(db: &Client, table: &str) -> Result<u64> {
         .await?)
 }
 
-pub async fn migrate_legacy_config(db: &Client, config: &Config) -> anyhow::Result<()> {
+/// The channels and opt-outs that older versions kept in the config file.
+#[derive(Debug, Default)]
+pub struct LegacyConfig {
+    /// Ids of the logged channels.
+    pub channels: Vec<String>,
+    /// Ids of the users and channels that opted out.
+    pub opted_out: Vec<String>,
+}
+
+pub async fn migrate_legacy_config(db: &Client, legacy: &LegacyConfig) -> anyhow::Result<()> {
     db.query(
         "
         CREATE TABLE IF NOT EXISTS channel_membership_state
@@ -205,8 +213,7 @@ pub async fn migrate_legacy_config(db: &Client, config: &Config) -> anyhow::Resu
     .execute()
     .await?;
 
-    let channels = config.channels.read().unwrap().clone();
-    for channel_id in channels {
+    for channel_id in &legacy.channels {
         db.query(
             "INSERT INTO channel_membership_state (channel_id, enabled, revision, changed_at) VALUES (?, 1, ?, now64(3, 'UTC'))",
         )
@@ -216,13 +223,7 @@ pub async fn migrate_legacy_config(db: &Client, config: &Config) -> anyhow::Resu
         .await?;
     }
 
-    // Legacy state used key presence rather than the bool value, so retain every key.
-    let legacy_opt_out = config
-        .opt_out
-        .iter()
-        .map(|entry| entry.key().clone())
-        .collect::<BTreeSet<_>>();
-    for subject_id in legacy_opt_out {
+    for subject_id in legacy.opted_out.iter().collect::<BTreeSet<_>>() {
         db.query(
             "INSERT INTO opt_out_state (scope, subject_id, opted_out, revision, changed_at) VALUES ('legacy', ?, 1, ?, now64(3, 'UTC'))",
         )

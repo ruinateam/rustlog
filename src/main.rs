@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
         db = db.with_password(password);
     }
 
-    setup_db(&db, &config.clickhouse_db, &config)
+    setup_db(&db, &config.clickhouse_db, &config.legacy_state())
         .await
         .context("could not run DB migrations")?;
 

@@ -8,13 +8,12 @@ use axum::{
 };
 use std::num::ParseIntError;
 use tracing::error;
-use twitch_api::helix::ClientRequestError;
 
 /// The messages are part of the frozen legacy API.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Twitch API error: {0}")]
-    Helix(Box<ClientRequestError<reqwest::Error>>),
+    Helix(Box<twitch::HelixError>),
     #[error("Int parse error: {0}")]
     ParseInt(#[from] ParseIntError),
     #[error("Invalid param: {0}")]

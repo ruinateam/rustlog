@@ -1,4 +1,7 @@
-use crate::logging::{LogFormat, LoggingConfig};
+use crate::{
+    logging::{LogFormat, LoggingConfig},
+    state::LegacyConfig,
+};
 use anyhow::Context;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -67,6 +70,22 @@ impl Config {
         }
 
         Ok(config)
+    }
+}
+
+impl Config {
+    /// The channels and opt-outs that older versions kept in this file, for
+    /// the migration that moved them to ClickHouse.
+    pub fn legacy_state(&self) -> LegacyConfig {
+        LegacyConfig {
+            channels: self.channels.read().unwrap().iter().cloned().collect(),
+            // Only the presence of a key counted, not its value.
+            opted_out: self
+                .opt_out
+                .iter()
+                .map(|entry| entry.key().clone())
+                .collect(),
+        }
     }
 }
 

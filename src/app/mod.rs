@@ -12,6 +12,13 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::info;
 
+/// A command from the admin API to the chat bot.
+#[derive(Debug)]
+pub enum BotMessage {
+    JoinChannels(Vec<String>),
+    PartChannels(Vec<String>),
+}
+
 /// Everything the HTTP handlers and the bot share.
 #[derive(Clone)]
 pub struct App {

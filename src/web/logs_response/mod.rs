@@ -11,6 +11,7 @@ use self::{
 };
 use crate::storage::stream::LogsStream;
 use aide::OperationOutput;
+use axum::http::header::CONTENT_TYPE;
 use axum::{
     Json,
     body::Body,
@@ -20,7 +21,6 @@ use axum::{
 use futures::TryStreamExt;
 use indexmap::IndexMap;
 use mime_guess::mime::{APPLICATION_JSON, TEXT_PLAIN_UTF_8};
-use reqwest::header::CONTENT_TYPE;
 use schemars::JsonSchema;
 
 pub struct LogsResponse {

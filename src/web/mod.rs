@@ -14,7 +14,10 @@ use self::{
     legacy::{admin::AdminApiKey, docs::LegacySpec},
     openapi::enrich_openapi,
 };
-use crate::{ShutdownRx, app::App, bot::BotMessage};
+use crate::{
+    ShutdownRx,
+    app::{App, BotMessage},
+};
 use aide::{
     axum::{ApiRouter, IntoApiResponse, routing::get},
     openapi::OpenApi,

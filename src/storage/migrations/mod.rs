@@ -3,7 +3,7 @@ mod state;
 mod structured;
 mod username_history;
 
-use crate::config::Config;
+use crate::state::LegacyConfig;
 use anyhow::Result;
 use clickhouse::Client;
 use state::StateMigration;
@@ -13,7 +13,9 @@ use username_history::UsernameHistoryMigration;
 
 use self::migratable::Migratable;
 
-pub async fn run(db: &Client, db_name: &str, config: &Config) -> Result<()> {
+/// Brings the schema up to date. `legacy` seeds the operational state when
+/// the database is created, and is ignored afterwards.
+pub async fn run(db: &Client, db_name: &str, legacy: &LegacyConfig) -> Result<()> {
     create_migrations_table(db).await?;
 
     run_migration(
@@ -81,7 +83,7 @@ String CODEC(ZSTD(10))
     run_migration(
         db,
         "8_channel_membership_and_opt_out_state",
-        StateMigration { config },
+        StateMigration { legacy },
     )
     .await?;
 

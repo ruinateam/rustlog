@@ -9,8 +9,7 @@ use axum::{
     http::{Method, Request},
 };
 use rustlog::{
-    app::App,
-    bot::BotMessage,
+    app::{App, BotMessage},
     config::Config,
     services::{sully::SullyGnome, tiers::Tiers},
     state::OperationalState,
@@ -104,7 +103,9 @@ impl TestServer {
         }))
         .unwrap();
 
-        setup_db(&db, &db_name, &config).await.unwrap();
+        setup_db(&db, &db_name, &config.legacy_state())
+            .await
+            .unwrap();
         db.query(SEED).execute().await.unwrap();
 
         let sully_cache = TempDir::new().unwrap();
