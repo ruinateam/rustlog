@@ -2,7 +2,7 @@ use crate::{
     ShutdownRx,
     app::App,
     storage::message::StructuredMessage,
-    web::responders::logs::message::{BasicMessage, ResponseMessage},
+    web::logs_response::message::{BasicMessage, ResponseMessage},
 };
 use axum::{
     Extension,

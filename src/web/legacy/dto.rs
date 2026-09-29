@@ -1,11 +1,15 @@
-use super::responders::logs::{JsonResponseType, LogsResponseType};
+//! Request and response types of the legacy API. Their serialized form and
+//! JSON schemas are frozen.
+
 use crate::{
     domain::{
         self,
         logs::{LogDate, LogsQuery, TimeRange},
         stats::{NameHistoryEntry, UserMessageCount},
+        tiers::DEFAULT_EXCLUDED_BOTS,
     },
     services::sully::{Stream, StreamList},
+    web::logs_response::{JsonResponseType, LogsResponseType},
 };
 use chrono::{DateTime, Utc};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
@@ -15,17 +19,6 @@ use serde::{
 };
 use std::fmt::Display;
 use strum::Display;
-
-pub const DEFAULT_EXCLUDED_BOTS: &[&str] = &[
-    "twirapp",
-    "streamelements",
-    "nightbot",
-    "moobot",
-    "mejkizbot",
-    "supibot",
-    "potatbotat",
-    "fossabot",
-];
 
 #[derive(Serialize, JsonSchema)]
 pub struct ChannelsList {
@@ -56,7 +49,7 @@ pub struct ChatBadge {
     pub description: String,
 }
 
-#[derive(Debug, Deserialize, JsonSchema, Display)]
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema, Display)]
 pub enum ChannelIdType {
     #[serde(rename = "channel")]
     #[strum(serialize = "channel")]
@@ -66,7 +59,7 @@ pub enum ChannelIdType {
     Id,
 }
 
-#[derive(Debug, Deserialize, JsonSchema, Display)]
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema, Display)]
 pub enum UserIdType {
     #[serde(rename = "user")]
     #[strum(serialize = "user")]
@@ -520,7 +513,7 @@ fn default_tier_mode() -> TierMode {
     TierMode::All
 }
 
-pub fn default_exclude_bots() -> Vec<String> {
+fn default_exclude_bots() -> Vec<String> {
     DEFAULT_EXCLUDED_BOTS
         .iter()
         .map(|bot| (*bot).to_owned())

@@ -39,7 +39,7 @@ impl<'a> ResponseMessage<'a> for BasicMessage<'a> {
 mod tests {
     use crate::{
         storage::message::{StructuredMessage, UnstructuredMessage},
-        web::responders::logs::message::ResponseMessage,
+        web::logs_response::message::ResponseMessage,
     };
 
     use super::BasicMessage;

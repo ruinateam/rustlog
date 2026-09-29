@@ -1,5 +1,13 @@
-use crate::{app::App, bot::BotMessage, web::error::Error};
+//! Admin routes, behind the `X-Api-Key` header.
+
+mod firehose;
+
+use crate::{app::App, bot::BotMessage, web::legacy::error::Error};
 use aide::{
+    axum::{
+        ApiRouter,
+        routing::{get_with, post_with},
+    },
     openapi::{
         HeaderStyle, Parameter, ParameterData, ParameterSchemaOrContent, ReferenceOr, SchemaObject,
     },
@@ -8,7 +16,7 @@ use aide::{
 use axum::{
     Extension, Json,
     extract::{Request, State},
-    middleware::Next,
+    middleware::{self, Next},
     response::{IntoResponse, Response},
 };
 use reqwest::StatusCode;
@@ -17,12 +25,41 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
+pub fn router() -> ApiRouter<App> {
+    ApiRouter::new()
+        .api_route(
+            "/channels",
+            post_with(add_channels, |mut op| {
+                admin_auth_doc(&mut op);
+                op.summary("Join channels for live logging")
+                    .tag("Admin")
+                    .description("Join the specified channels")
+            })
+            .delete_with(remove_channels, |mut op| {
+                admin_auth_doc(&mut op);
+                op.summary("Leave channels and stop live logging")
+                    .tag("Admin")
+                    .description("Leave the specified channels")
+            }),
+        )
+        .api_route(
+            "/firehose",
+            get_with(firehose::firehose, |mut op| {
+                admin_auth_doc(&mut op);
+                op.summary("Stream live accepted chat events")
+                    .tag("Admin")
+                    .description("Open a WebSocket feed after authenticating with `X-Api-Key`. Messages are live, at-least-once deliveries accepted by the writer queue; reconnect and replay through the HTTP logs API after a `1013` close.")
+            }),
+        )
+        .route_layer(middleware::from_fn(admin_auth))
+}
+
 /// The configured admin API key, provided to [`admin_auth`] as a request
 /// extension so that the routes can be built without the app state.
 #[derive(Clone)]
 pub struct AdminApiKey(pub Option<Arc<str>>);
 
-pub async fn admin_auth(
+async fn admin_auth(
     Extension(AdminApiKey(admin_key)): Extension<AdminApiKey>,
     request: Request,
     next: Next,
@@ -41,7 +78,7 @@ pub async fn admin_auth(
     Err((StatusCode::FORBIDDEN, "No, I don't think so"))
 }
 
-pub fn admin_auth_doc(op: &mut TransformOperation) {
+fn admin_auth_doc(op: &mut TransformOperation) {
     let schema = aide::generate::in_context(|ctx| ctx.schema.subschema_for::<String>());
 
     op.inner_mut()
@@ -72,7 +109,7 @@ pub struct ChannelsRequest {
     pub channels: Vec<String>,
 }
 
-pub async fn add_channels(
+async fn add_channels(
     Extension(bot_tx): Extension<Sender<BotMessage>>,
     app: State<App>,
     Json(ChannelsRequest { channels }): Json<ChannelsRequest>,
@@ -85,7 +122,7 @@ pub async fn add_channels(
     Ok(())
 }
 
-pub async fn remove_channels(
+async fn remove_channels(
     Extension(bot_tx): Extension<Sender<BotMessage>>,
     app: State<App>,
     Json(ChannelsRequest { channels }): Json<ChannelsRequest>,

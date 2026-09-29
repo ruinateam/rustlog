@@ -7,6 +7,18 @@ use std::collections::{HashMap, HashSet};
 pub const RESPONSE_LIMIT: usize = 500;
 pub const TIMEZONE: &str = "Europe/Moscow";
 
+/// Bot logins left out of tier tables unless a request says otherwise.
+pub const DEFAULT_EXCLUDED_BOTS: &[&str] = &[
+    "twirapp",
+    "streamelements",
+    "nightbot",
+    "moobot",
+    "mejkizbot",
+    "supibot",
+    "potatbotat",
+    "fossabot",
+];
+
 /// Which messages count towards a tier table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TierMode {

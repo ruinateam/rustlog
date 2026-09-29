@@ -305,36 +305,6 @@
   },
   "components": {
     "schemas": {
-      "ChannelsRequest": {
-        "type": "object",
-        "properties": {
-          "channels": {
-            "description": "List of channel ids",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "channels"
-        ]
-      },
-      "FirehoseQuery": {
-        "type": "object",
-        "properties": {
-          "format": {
-            "$ref": "#/components/schemas/FirehoseFormat"
-          }
-        }
-      },
-      "FirehoseFormat": {
-        "type": "string",
-        "enum": [
-          "raw",
-          "json-basic"
-        ]
-      },
       "ResolveUserQuery": {
         "type": "object",
         "properties": {
