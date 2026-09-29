@@ -2,8 +2,8 @@ use super::message::StructuredMessage;
 use crate::{state::OperationalState, storage::message::MESSAGES_STRUCTURED_TABLE, ShutdownRx};
 use anyhow::{anyhow, Context};
 use clickhouse::Client;
-use lazy_static::lazy_static;
 use prometheus::{register_int_gauge, IntGauge};
+use std::sync::LazyLock;
 use std::{ops::Range, sync::Arc, time::Duration};
 use tokio::{
     sync::{
@@ -18,13 +18,13 @@ use tracing::{debug, error, info, trace};
 const RETRY_COUNT: usize = 20;
 const RETRY_INTERVAL_SECONDS: u64 = 5;
 
-lazy_static! {
-    static ref BATCH_MSG_COUNT_GAGUE: IntGauge = register_int_gauge!(
+static BATCH_MESSAGE_COUNT_GAUGE: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
         "rustlog_messages_written_per_batch",
         "How many messages are written to the database per batch"
     )
-    .unwrap();
-}
+    .unwrap()
+});
 
 #[derive(Default, Clone)]
 pub struct FlushBuffer {
@@ -162,7 +162,7 @@ async fn write_chunk(
 
     if messages.is_empty() {
         buffer.messages.write().await.clear();
-        BATCH_MSG_COUNT_GAGUE.set(0);
+        BATCH_MESSAGE_COUNT_GAUGE.set(0);
         return Ok(());
     }
 
@@ -183,7 +183,7 @@ async fn write_chunk(
         messages.len(),
         started_at.elapsed().as_millis()
     );
-    BATCH_MSG_COUNT_GAGUE.set(messages.len().try_into().unwrap());
+    BATCH_MESSAGE_COUNT_GAUGE.set(messages.len().try_into().unwrap());
     messages_write_guard.clear();
 
     Ok(())

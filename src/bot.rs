@@ -6,8 +6,8 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use chrono::Utc;
-use lazy_static::lazy_static;
 use prometheus::{register_int_counter, register_int_counter_vec, IntCounter, IntCounterVec};
+use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::{
     sync::mpsc::{Receiver, Sender},
@@ -31,19 +31,22 @@ pub enum BotMessage {
     PartChannels(Vec<String>),
 }
 
-lazy_static! {
-    static ref MESSAGES_RECEIVED_COUNTERS: IntCounterVec = register_int_counter_vec!(
+static MESSAGES_RECEIVED_COUNTERS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
         "rustlog_messages_received",
         "How many messages were written",
         &["channel_id"]
     )
-    .unwrap();
-    static ref FIREHOSE_MESSAGES_PUBLISHED: IntCounter = register_int_counter!(
+    .unwrap()
+});
+
+static FIREHOSE_MESSAGES_PUBLISHED: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
         "rustlog_firehose_messages_published_total",
         "Messages accepted by the live firehose after the writer queue accepted them"
     )
-    .unwrap();
-}
+    .unwrap()
+});
 
 const COMMAND_PREFIX: &str = "!rustlog ";
 

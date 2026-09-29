@@ -14,43 +14,52 @@ use axum::{
     Extension,
 };
 use futures::{SinkExt, StreamExt};
-use lazy_static::lazy_static;
 use prometheus::{
     register_int_counter, register_int_counter_vec, register_int_gauge, IntCounter, IntCounterVec,
     IntGauge,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::{sync::broadcast, time::timeout};
 use tracing::warn;
 
 const FRAME_SEND_TIMEOUT_SECONDS: u64 = 5;
 
-lazy_static! {
-    static ref CLIENTS: IntGauge = register_int_gauge!(
+static CLIENTS: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
         "rustlog_firehose_clients_count",
         "Currently connected firehose clients"
     )
-    .unwrap();
-    static ref FRAMES_SENT: IntCounterVec = register_int_counter_vec!(
+    .unwrap()
+});
+
+static FRAMES_SENT: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
         "rustlog_firehose_frames_sent_total",
         "Firehose frames sent to clients",
         &["format"]
     )
-    .unwrap();
-    static ref LAGGED_MESSAGES: IntCounter = register_int_counter!(
+    .unwrap()
+});
+
+static LAGGED_MESSAGES: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
         "rustlog_firehose_lagged_messages_total",
         "Messages skipped for firehose clients that could not keep up"
     )
-    .unwrap();
-    static ref DISCONNECTS: IntCounterVec = register_int_counter_vec!(
+    .unwrap()
+});
+
+static DISCONNECTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
         "rustlog_firehose_disconnects_total",
         "Firehose disconnects by bounded reason",
         &["reason"]
     )
-    .unwrap();
-}
+    .unwrap()
+});
 
 #[derive(Debug, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "kebab-case")]
