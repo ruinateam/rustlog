@@ -25,7 +25,7 @@ use axum::{
 };
 use axum_extra::{headers::CacheControl, TypedHeader};
 use chrono::{DateTime, Datelike, Days, Months, NaiveDate, NaiveTime, Utc};
-use rand::{distr::Alphanumeric, rng, Rng};
+use rand::{distr::Alphanumeric, rng, RngExt};
 use std::time::Duration;
 use tracing::debug;
 

@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use clickhouse::{Client, Row};
 use dashmap::DashSet;
 use futures::{stream, StreamExt};
-use rand::Rng;
+use rand::RngExt;
 use reqwest::{Client as HttpClient, StatusCode};
 use serde::Deserialize;
 use std::borrow::Cow;

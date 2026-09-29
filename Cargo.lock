@@ -2250,7 +2250,7 @@ dependencies = [
  "mime_guess",
  "pretty_assertions",
  "prometheus",
- "rand 0.9.5",
+ "rand 0.10.3",
  "rayon",
  "reqwest",
  "rust-embed",
