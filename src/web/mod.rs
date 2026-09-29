@@ -9,11 +9,7 @@ mod openapi;
 mod trace_layer;
 mod v2;
 
-use self::{
-    cache_control::no_cache,
-    legacy::{admin::AdminApiKey, docs::LegacySpec},
-    openapi::enrich_openapi,
-};
+use self::{cache_control::no_cache, legacy::docs::LegacySpec, openapi::enrich_openapi};
 use crate::{
     ShutdownRx,
     app::{App, BotMessage},
@@ -40,6 +36,12 @@ use tower_http::{
     trace::TraceLayer,
 };
 use tracing::{debug, info};
+
+/// The configured admin API key, provided to the admin routes of both APIs
+/// as a request extension so that the routes can be built without the app
+/// state.
+#[derive(Clone)]
+pub struct AdminApiKey(pub Option<Arc<str>>);
 
 /// The HTTP routes together with the OpenAPI documents that describe them.
 pub struct Api {

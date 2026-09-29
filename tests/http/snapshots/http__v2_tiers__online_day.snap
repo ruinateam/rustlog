@@ -1,0 +1,52 @@
+---
+source: tests/http/v2_tiers.rs
+expression: "get(\"/api/v2/channels/11111/tiers/2026-03-01?mode=online\").send().await"
+---
+GET /api/v2/channels/11111/tiers/2026-03-01?mode=online
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "entries": [
+    {
+      "messages": 1,
+      "tierScore": 50,
+      "uniqueMessages": 1,
+      "userId": "22222",
+      "windows": {
+        "15m": {
+          "active": 1,
+          "rank": 1,
+          "tier": "HT1"
+        },
+        "1m": {
+          "active": 1,
+          "rank": 1,
+          "tier": "HT1"
+        },
+        "30m": {
+          "active": 1,
+          "rank": 1,
+          "tier": "HT1"
+        },
+        "5m": {
+          "active": 1,
+          "rank": 1,
+          "tier": "HT1"
+        },
+        "60m": {
+          "active": 1,
+          "rank": 1,
+          "tier": "HT1"
+        }
+      }
+    }
+  ],
+  "mode": "online",
+  "period": "2026-03-01",
+  "timezone": "Europe/Moscow",
+  "totalMessages": 1,
+  "totalUniqueMessages": 1,
+  "totalUsers": 1
+}

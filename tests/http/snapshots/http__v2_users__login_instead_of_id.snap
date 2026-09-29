@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_users.rs
+expression: "get(\"/api/v2/channels/testchan/badges\").send().await"
+---
+GET /api/v2/channels/testchan/badges
+status: 400 Bad Request
+content-type: application/problem+json
+---
+{
+  "code": "invalid_request",
+  "detail": "Invalid URL: `testchan` is not a numeric Twitch id",
+  "status": 400,
+  "title": "The request is invalid"
+}

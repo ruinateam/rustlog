@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_users.rs
+expression: "get(\"/api/v2/users?id=alice\").send().await"
+---
+GET /api/v2/users?id=alice
+status: 400 Bad Request
+content-type: application/problem+json
+---
+{
+  "code": "invalid_request",
+  "detail": "Failed to deserialize query string: id[0]: `alice` is not a numeric Twitch id",
+  "status": 400,
+  "title": "The request is invalid"
+}

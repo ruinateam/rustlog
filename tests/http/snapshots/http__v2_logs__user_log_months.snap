@@ -1,0 +1,15 @@
+---
+source: tests/http/v2_logs.rs
+expression: "get(\"/api/v2/channels/11111/users/22222/log-months\").send().await"
+---
+GET /api/v2/channels/11111/users/22222/log-months
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "months": [
+    "2026-03",
+    "2026-02"
+  ]
+}

@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_tiers.rs
+expression: "get(\"/api/v2/channels/11111/tiers/2026-03?mode=sometimes\").send().await"
+---
+GET /api/v2/channels/11111/tiers/2026-03?mode=sometimes
+status: 400 Bad Request
+content-type: application/problem+json
+---
+{
+  "code": "invalid_request",
+  "detail": "Failed to deserialize query string: mode: unknown variant `sometimes`, expected one of `all`, `online`, `offline`",
+  "status": 400,
+  "title": "The request is invalid"
+}

@@ -1,0 +1,13 @@
+---
+source: tests/http/v2_logs.rs
+expression: "get(format!(\"{CHANNEL_LOGS}?{MARCH}\")).send().await"
+---
+GET /api/v2/channels/11111/logs?from=2026-03-01T00:00:00Z&to=2026-04-01T00:00:00Z
+status: 500 Internal Server Error
+content-type: application/problem+json
+---
+{
+  "code": "internal_error",
+  "status": 500,
+  "title": "An internal error occurred"
+}

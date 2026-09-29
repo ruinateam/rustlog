@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_logs.rs
+expression: get(USER_LOGS).send().await
+---
+GET /api/v2/channels/11111/users/22222/logs
+status: 400 Bad Request
+content-type: application/problem+json
+---
+{
+  "code": "invalid_request",
+  "detail": "Failed to deserialize query string: missing field `from`",
+  "status": 400,
+  "title": "The request is invalid"
+}

@@ -1,0 +1,9 @@
+---
+source: tests/http/v2_admin.rs
+expression: "request(Method::POST, \"/api/v2/opt-out-codes\").without_body().send().await"
+---
+POST /api/v2/opt-out-codes
+status: 201 Created
+content-type: application/json
+---
+<body omitted>

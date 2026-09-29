@@ -1,0 +1,22 @@
+---
+source: tests/http/v2_stats.rs
+expression: "get(\"/api/v2/channels/11111/stats\").send().await"
+---
+GET /api/v2/channels/11111/stats
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "messageCount": 6,
+  "topChatters": [
+    {
+      "messageCount": 4,
+      "userId": "22222"
+    },
+    {
+      "messageCount": 2,
+      "userId": "33333"
+    }
+  ]
+}

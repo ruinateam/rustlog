@@ -196,9 +196,14 @@ async fn capabilities() -> Json<Vec<&'static str>> {
     Json(CAPABILITIES.to_vec())
 }
 
-/// Adds the `x-rustlog-capabilities` header that justlog clients look for.
+/// Adds the `x-rustlog-capabilities` header that justlog clients look for
+/// to every response outside API v2.
 pub async fn capabilities_header(request: Request, next: Next) -> Response {
+    let is_v2 = request.uri().path().starts_with("/api/v2");
     let mut response = next.run(request).await;
+    if is_v2 {
+        return response;
+    }
     response.headers_mut().insert(
         "x-rustlog-capabilities",
         CAPABILITIES.join(",").try_into().unwrap(),

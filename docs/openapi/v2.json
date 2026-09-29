@@ -1,33 +1,55 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "ChatTiers Rustlog API v2",
-    "summary": "Versioned API for canonical Twitch ids and explicit query semantics.",
-    "description": "v2 is additive and does not change legacy routes. Errors use `application/problem+json`; log ranges require both `from` and `to` in RFC 3339 format.",
+    "title": "ChatTiers Rustlog API",
+    "summary": "Twitch chat logs, stats and chat tiers.",
+    "description": "Chat logs of the logged Twitch channels, message stats, chat tiers and\nstream history.\n\n## Conventions\n\n- Channels and users are addressed by their numeric Twitch ids. Look up the\n  id of a login with `GET /users?login=...`; logins change, ids do not.\n- JSON fields are in lower camel case; absent optional fields are left out.\n- Timestamps are RFC 3339 in UTC, dates `YYYY-MM-DD`, months `YYYY-MM`. A\n  time range `[from, to)` includes `from` and excludes `to`.\n- A list parameter repeats: `?login=a&login=b`.\n- Data of channels and users that opted out is answered with `403`.\n\n## Errors\n\nErrors are `application/problem+json` (RFC 9457). Use `code` and the HTTP\nstatus in program logic; `title` and `detail` are for people.\n\n| `code` | Status |\n| --- | --- |\n| `invalid_request` | 400 |\n| `unauthorized` | 401 |\n| `opted_out` | 403 |\n| `not_found` | 404 |\n| `method_not_allowed` | 405 |\n| `internal_error` | 500 |\n| `upstream_unavailable` | 503 |\n",
     "version": "0.1.0"
   },
   "servers": [
     {
       "url": "/api/v2",
-      "description": "Current rustlog instance, version 2 API"
+      "description": "This rustlog instance"
     }
   ],
   "paths": {
-    "/users/resolve": {
+    "/users": {
       "get": {
         "tags": [
           "Users"
         ],
-        "summary": "Resolve a Twitch login",
-        "description": "Resolve one Twitch login to the canonical numeric user id.",
-        "operationId": "resolveUser",
+        "summary": "Look up users",
+        "description": "Look up users by login or id, up to 100 in total; repeat `login` or `id` for several. Users Twitch does not know are left out.",
+        "operationId": "getUsers",
         "parameters": [
           {
             "in": "query",
             "name": "login",
-            "required": true,
+            "description": "Twitch login.",
             "schema": {
-              "type": "string"
+              "description": "Twitch login.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "id",
+            "description": "Numeric Twitch id.",
+            "schema": {
+              "description": "Numeric Twitch id.",
+              "type": "array",
+              "items": {
+                "description": "A numeric Twitch user id, which channels have too.",
+                "type": "string",
+                "pattern": "^[0-9]+$",
+                "examples": [
+                  "71092938"
+                ]
+              }
             },
             "style": "form"
           }
@@ -38,7 +60,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResolvedUser"
+                  "$ref": "#/components/schemas/Users"
                 }
               }
             }
@@ -96,28 +118,295 @@
         }
       }
     },
-    "/channels/{channel_id}/availability": {
+    "/users/{userId}/name-history": {
       "get": {
         "tags": [
-          "Logs"
+          "Users"
         ],
-        "summary": "List available log periods",
-        "description": "List day buckets for a channel or month buckets for one canonical user id.",
-        "operationId": "getChannelAvailability",
+        "summary": "Get the logins of a user",
+        "description": "Every login the user was seen with in a logged chat, with the first and last time.",
+        "operationId": "getNameHistory",
         "parameters": [
           {
-            "in": "query",
+            "in": "path",
             "name": "userId",
+            "description": "Id of the user.",
+            "required": true,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "description": "Id of the user.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NameHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels": {
+      "get": {
+        "tags": [
+          "Channels"
+        ],
+        "summary": "List the logged channels",
+        "description": "The channels being logged, ordered by login.",
+        "operationId": "getChannels",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channels"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/badges": {
+      "get": {
+        "tags": [
+          "Channels"
+        ],
+        "summary": "Get the chat badges of a channel",
+        "description": "The global and the channel's Twitch chat badges, to render the `badges` tag of messages. Only for logged channels.",
+        "operationId": "getChatBadges",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBadges"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/streams": {
+      "get": {
+        "tags": [
+          "Channels"
+        ],
+        "summary": "List the streams of a year",
+        "description": "The channel's streams in a year as SullyGnome knows them, from its cache when SullyGnome is unreachable.",
+        "operationId": "getStreams",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "year",
+            "description": "Year of the streams.",
+            "required": true,
+            "schema": {
+              "description": "Year of the streams.",
+              "type": "integer",
+              "format": "int32"
             },
             "style": "form"
           }
         ],
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Streams"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Problem response",
             "content": {
@@ -171,21 +460,120 @@
         }
       }
     },
-    "/channels/{channel_id}/users/{user_id}/logs": {
+    "/channels/{channelId}/log-dates": {
       "get": {
         "tags": [
           "Logs"
         ],
-        "summary": "Get user logs for an explicit range",
-        "description": "Both RFC 3339 range endpoints are required. `from` is inclusive and `to` is exclusive.",
-        "operationId": "getUserLogs",
+        "summary": "List the days with logs",
+        "description": "The UTC days with messages in the channel, newest first.",
+        "operationId": "getChannelLogDates",
         "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogDates"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/logs": {
+      "get": {
+        "tags": [
+          "Logs"
+        ],
+        "summary": "Get the messages of a channel",
+        "description": "The channel's messages in `[from, to)`.",
+        "operationId": "getChannelLogs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
           {
             "in": "query",
             "name": "from",
-            "description": "RFC 3339 inclusive start timestamp.",
+            "description": "Start of the range, inclusive (RFC 3339).",
             "required": true,
             "schema": {
+              "description": "Start of the range, inclusive (RFC 3339).",
               "type": "string",
               "format": "date-time"
             },
@@ -194,9 +582,10 @@
           {
             "in": "query",
             "name": "to",
-            "description": "RFC 3339 exclusive end timestamp.",
+            "description": "End of the range, exclusive (RFC 3339).",
             "required": true,
             "schema": {
+              "description": "End of the range, exclusive (RFC 3339).",
               "type": "string",
               "format": "date-time"
             },
@@ -205,7 +594,9 @@
           {
             "in": "query",
             "name": "format",
+            "description": "Response format; `basic-json` by default.",
             "schema": {
+              "description": "Response format; `basic-json` by default.",
               "$ref": "#/components/schemas/LogFormat"
             },
             "style": "form"
@@ -213,8 +604,9 @@
           {
             "in": "query",
             "name": "reverse",
-            "description": "Return newest messages first.",
+            "description": "Newest messages first.",
             "schema": {
+              "description": "Newest messages first.",
               "type": "boolean"
             },
             "style": "form"
@@ -222,8 +614,9 @@
           {
             "in": "query",
             "name": "limit",
-            "description": "Maximum number of messages to return.",
+            "description": "Return at most this many messages.",
             "schema": {
+              "description": "Return at most this many messages.",
               "type": [
                 "integer",
                 "null"
@@ -236,8 +629,9 @@
           {
             "in": "query",
             "name": "offset",
-            "description": "Number of messages to skip.",
+            "description": "Skip this many messages first.",
             "schema": {
+              "description": "Skip this many messages first.",
               "type": [
                 "integer",
                 "null"
@@ -249,6 +643,1317 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "The messages in the requested `format`: `basic-json` or `full-json` as JSON, `ndjson` as one basic message per line, `text` and `raw` as text lines.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BasicMessages"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FullMessages"
+                    }
+                  ]
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/BasicMessage"
+                }
+              },
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/logs/random": {
+      "get": {
+        "tags": [
+          "Logs"
+        ],
+        "summary": "Get a random message of a channel",
+        "description": "One message picked at random.",
+        "operationId": "getRandomChannelMessage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "description": "Response format; `basic-json` by default.",
+            "schema": {
+              "description": "Response format; `basic-json` by default.",
+              "$ref": "#/components/schemas/LogFormat"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The messages in the requested `format`: `basic-json` or `full-json` as JSON, `ndjson` as one basic message per line, `text` and `raw` as text lines.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BasicMessages"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FullMessages"
+                    }
+                  ]
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/BasicMessage"
+                }
+              },
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/stats": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Count the messages of a channel",
+        "description": "The number of messages and the users with the most, optionally in `[from, to)`.",
+        "operationId": "getChannelStats",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "description": "Start of the range, inclusive (RFC 3339). Requires `to`.",
+            "schema": {
+              "description": "Start of the range, inclusive (RFC 3339). Requires `to`.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "description": "End of the range, exclusive (RFC 3339). Requires `from`.",
+            "schema": {
+              "description": "End of the range, exclusive (RFC 3339). Requires `from`.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/tiers/{period}": {
+      "get": {
+        "tags": [
+          "Tiers"
+        ],
+        "summary": "Rank the chatters of a period",
+        "description": "Ranks the users by the number of 1, 5, 15, 30 and 60 minute windows they chatted in, during a calendar day, month or year in Europe/Moscow time.",
+        "operationId": "getTiers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "period",
+            "description": "Calendar day, month or year in Europe/Moscow time.",
+            "required": true,
+            "schema": {
+              "description": "Calendar day, month or year in Europe/Moscow time.",
+              "type": "string",
+              "pattern": "^[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "description": "Which messages count.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "online",
+                "offline"
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "excludeBots",
+            "description": "Bot logins to leave out, repeated for several. Replaces the default\n list of common bots; give it once empty to leave out none.",
+            "schema": {
+              "description": "Bot logins to leave out, repeated for several. Replaces the default\n list of common bots; give it once empty to leave out none.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TierTable"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/users/{userId}/log-months": {
+      "get": {
+        "tags": [
+          "Logs"
+        ],
+        "summary": "List the months with logs of a user",
+        "description": "The UTC months in which the user wrote in the channel, newest first.",
+        "operationId": "getUserLogMonths",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "Id of the user.",
+            "required": true,
+            "schema": {
+              "description": "Id of the user.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogMonths"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/users/{userId}/logs": {
+      "get": {
+        "tags": [
+          "Logs"
+        ],
+        "summary": "Get the messages of a user",
+        "description": "The user's messages in the channel in `[from, to)`.",
+        "operationId": "getUserLogs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "Id of the user.",
+            "required": true,
+            "schema": {
+              "description": "Id of the user.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "description": "Start of the range, inclusive (RFC 3339).",
+            "required": true,
+            "schema": {
+              "description": "Start of the range, inclusive (RFC 3339).",
+              "type": "string",
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "description": "End of the range, exclusive (RFC 3339).",
+            "required": true,
+            "schema": {
+              "description": "End of the range, exclusive (RFC 3339).",
+              "type": "string",
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "description": "Response format; `basic-json` by default.",
+            "schema": {
+              "description": "Response format; `basic-json` by default.",
+              "$ref": "#/components/schemas/LogFormat"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "reverse",
+            "description": "Newest messages first.",
+            "schema": {
+              "description": "Newest messages first.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Return at most this many messages.",
+            "schema": {
+              "description": "Return at most this many messages.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 1
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Skip this many messages first.",
+            "schema": {
+              "description": "Skip this many messages first.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The messages in the requested `format`: `basic-json` or `full-json` as JSON, `ndjson` as one basic message per line, `text` and `raw` as text lines.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BasicMessages"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FullMessages"
+                    }
+                  ]
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/BasicMessage"
+                }
+              },
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/users/{userId}/logs/random": {
+      "get": {
+        "tags": [
+          "Logs"
+        ],
+        "summary": "Get a random message of a user",
+        "description": "One of the user's messages in the channel, picked at random.",
+        "operationId": "getRandomUserMessage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "Id of the user.",
+            "required": true,
+            "schema": {
+              "description": "Id of the user.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "description": "Response format; `basic-json` by default.",
+            "schema": {
+              "description": "Response format; `basic-json` by default.",
+              "$ref": "#/components/schemas/LogFormat"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The messages in the requested `format`: `basic-json` or `full-json` as JSON, `ndjson` as one basic message per line, `text` and `raw` as text lines.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BasicMessages"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FullMessages"
+                    }
+                  ]
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/BasicMessage"
+                }
+              },
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/users/{userId}/logs/search": {
+      "get": {
+        "tags": [
+          "Logs"
+        ],
+        "summary": "Search the messages of a user",
+        "description": "The user's messages in the channel that contain `q`, ignoring case.",
+        "operationId": "searchUserLogs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "Id of the user.",
+            "required": true,
+            "schema": {
+              "description": "Id of the user.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "description": "Text to find in the messages, ignoring case.",
+            "required": true,
+            "schema": {
+              "description": "Text to find in the messages, ignoring case.",
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "description": "Response format; `basic-json` by default.",
+            "schema": {
+              "description": "Response format; `basic-json` by default.",
+              "$ref": "#/components/schemas/LogFormat"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "reverse",
+            "description": "Newest messages first.",
+            "schema": {
+              "description": "Newest messages first.",
+              "type": "boolean"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Return at most this many messages.",
+            "schema": {
+              "description": "Return at most this many messages.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 1
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Skip this many messages first.",
+            "schema": {
+              "description": "Skip this many messages first.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The messages in the requested `format`: `basic-json` or `full-json` as JSON, `ndjson` as one basic message per line, `text` and `raw` as text lines.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BasicMessages"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FullMessages"
+                    }
+                  ]
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/BasicMessage"
+                }
+              },
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/users/{userId}/stats": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Count the messages of a user",
+        "description": "The number of the user's messages in the channel, optionally in `[from, to)`.",
+        "operationId": "getUserStats",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "Id of the user.",
+            "required": true,
+            "schema": {
+              "description": "Id of the user.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "description": "Start of the range, inclusive (RFC 3339). Requires `to`.",
+            "schema": {
+              "description": "Start of the range, inclusive (RFC 3339). Requires `to`.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "description": "End of the range, exclusive (RFC 3339). Requires `from`.",
+            "schema": {
+              "description": "End of the range, exclusive (RFC 3339). Requires `from`.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/opt-out-codes": {
+      "post": {
+        "tags": [
+          "Opt-out"
+        ],
+        "summary": "Create an opt-out code",
+        "description": "A code that opts its sender out of logging when written as `!rustlog optout <code>` in a logged chat before it expires.",
+        "operationId": "createOptOutCode",
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptOutCode"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/channels/{channelId}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Start logging a channel",
+        "description": "The bot joins the channel's chat.",
+        "operationId": "joinChannel",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Api-Key",
+            "description": "The configured admin API key.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "no content"
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Stop logging a channel",
+        "description": "The bot leaves the channel's chat; its logs are kept.",
+        "operationId": "leaveChannel",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Api-Key",
+            "description": "The configured admin API key.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "no content"
+          },
           "400": {
             "description": "Problem response",
             "content": {
@@ -305,22 +2010,57 @@
   },
   "components": {
     "schemas": {
-      "ResolveUserQuery": {
+      "UsersQuery": {
+        "description": "Users to look up; repeat a parameter for several.",
         "type": "object",
         "properties": {
           "login": {
-            "type": "string"
+            "description": "Twitch login.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "id": {
+            "description": "Numeric Twitch id.",
+            "type": "array",
+            "items": {
+              "description": "A numeric Twitch user id, which channels have too.",
+              "type": "string",
+              "pattern": "^[0-9]+$",
+              "examples": [
+                "71092938"
+              ]
+            },
+            "default": []
+          }
+        }
+      },
+      "Users": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
           }
         },
         "required": [
-          "login"
+          "users"
         ]
       },
-      "ResolvedUser": {
+      "User": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "description": "A numeric Twitch user id, which channels have too.",
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "examples": [
+              "71092938"
+            ]
           },
           "login": {
             "type": "string"
@@ -335,16 +2075,30 @@
         "type": "object",
         "properties": {
           "title": {
+            "description": "A short summary of the code, for people.",
             "type": "string"
           },
           "code": {
-            "type": "string"
+            "description": "What went wrong, for program logic.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProblemCode"
+              }
+            ]
           },
           "status": {
+            "description": "The HTTP status code.",
             "type": "integer",
             "format": "uint16",
             "minimum": 0,
             "maximum": 65535
+          },
+          "detail": {
+            "description": "What exactly is wrong with this request, for people.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -353,36 +2107,305 @@
           "title"
         ]
       },
-      "AvailabilityQuery": {
+      "ProblemCode": {
+        "type": "string",
+        "enum": [
+          "invalid_request",
+          "unauthorized",
+          "opted_out",
+          "not_found",
+          "method_not_allowed",
+          "upstream_unavailable",
+          "internal_error"
+        ]
+      },
+      "UserPath": {
         "type": "object",
         "properties": {
           "userId": {
+            "description": "Id of the user.",
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "examples": [
+              "71092938"
+            ]
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      },
+      "NameHistory": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PreviousName"
+            }
+          }
+        },
+        "required": [
+          "names"
+        ]
+      },
+      "PreviousName": {
+        "type": "object",
+        "properties": {
+          "login": {
+            "type": "string"
+          },
+          "firstSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "login",
+          "firstSeenAt",
+          "lastSeenAt"
+        ]
+      },
+      "Channels": {
+        "type": "object",
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          }
+        },
+        "required": [
+          "channels"
+        ]
+      },
+      "ChannelPath": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "description": "Id of the channel.",
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "examples": [
+              "71092938"
+            ]
+          }
+        },
+        "required": [
+          "channelId"
+        ]
+      },
+      "ChatBadges": {
+        "type": "object",
+        "properties": {
+          "badges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatBadge"
+            }
+          }
+        },
+        "required": [
+          "badges"
+        ]
+      },
+      "ChatBadge": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "setId": {
+            "description": "Badge set, such as `subscriber`.",
+            "type": "string"
+          },
+          "version": {
+            "description": "Version within the set, such as `12`; together with the set it is\n the value of the IRC `badges` tag.",
+            "type": "string"
+          },
+          "imageUrl1x": {
+            "type": "string"
+          },
+          "imageUrl2x": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "setId",
+          "version",
+          "title",
+          "description",
+          "imageUrl1x",
+          "imageUrl2x"
+        ]
+      },
+      "StreamsQuery": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "description": "Year of the streams.",
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "year"
+        ]
+      },
+      "Streams": {
+        "type": "object",
+        "properties": {
+          "streams": {
+            "description": "The streams of the year, as SullyGnome knows them.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Stream"
+            }
+          }
+        },
+        "required": [
+          "streams"
+        ]
+      },
+      "Stream": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "SullyGnome's id of the stream.",
+            "type": "string"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "durationMinutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "games": {
+            "description": "The games played, as SullyGnome lists them.",
             "type": [
               "string",
               "null"
             ]
           }
-        }
+        },
+        "required": [
+          "id"
+        ]
       },
-      "UserLogsQuery": {
+      "LogDates": {
         "type": "object",
         "properties": {
-          "format": {
-            "$ref": "#/components/schemas/LogFormat"
-          },
+          "dates": {
+            "description": "UTC days with messages, newest first.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        },
+        "required": [
+          "dates"
+        ]
+      },
+      "Range": {
+        "description": "A required time range.",
+        "type": "object",
+        "properties": {
           "from": {
+            "description": "Start of the range, inclusive (RFC 3339).",
             "type": "string",
             "format": "date-time"
           },
           "to": {
+            "description": "End of the range, exclusive (RFC 3339).",
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "Format": {
+        "description": "How messages are returned.",
+        "type": "object",
+        "properties": {
+          "format": {
+            "description": "Response format; `basic-json` by default.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LogFormat"
+              }
+            ]
+          }
+        }
+      },
+      "LogFormat": {
+        "oneOf": [
+          {
+            "description": "`{ \"messages\": [BasicMessage] }` as JSON.",
+            "type": "string",
+            "const": "basic-json"
           },
+          {
+            "description": "`{ \"messages\": [FullMessage] }` as JSON.",
+            "type": "string",
+            "const": "full-json"
+          },
+          {
+            "description": "One `BasicMessage` per line.",
+            "type": "string",
+            "const": "ndjson"
+          },
+          {
+            "description": "One formatted message per line.",
+            "type": "string",
+            "const": "text"
+          },
+          {
+            "description": "One raw IRC message per line.",
+            "type": "string",
+            "const": "raw"
+          }
+        ]
+      },
+      "Paging": {
+        "description": "Ordering and paging of a list of messages.",
+        "type": "object",
+        "properties": {
           "reverse": {
+            "description": "Newest messages first.",
             "type": "boolean",
             "default": false
           },
           "limit": {
+            "description": "Return at most this many messages.",
             "type": [
               "integer",
               "null"
@@ -391,6 +2414,7 @@
             "minimum": 1
           },
           "offset": {
+            "description": "Skip this many messages first.",
             "type": [
               "integer",
               "null"
@@ -398,22 +2422,530 @@
             "format": "uint64",
             "minimum": 0
           }
+        }
+      },
+      "BasicMessages": {
+        "description": "The `basic-json` body; only for the documentation.",
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BasicMessage"
+            }
+          }
         },
         "required": [
-          "from",
-          "to"
+          "messages"
         ]
       },
-      "LogFormat": {
-        "type": "string",
-        "enum": [
-          "basic-json",
-          "full-json",
-          "ndjson",
+      "BasicMessage": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
           "text",
-          "raw"
+          "displayName",
+          "timestamp",
+          "id",
+          "tags"
+        ]
+      },
+      "FullMessages": {
+        "description": "The `full-json` body; only for the documentation.",
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FullMessage"
+            }
+          }
+        },
+        "required": [
+          "messages"
+        ]
+      },
+      "FullMessage": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "integer",
+            "format": "int8",
+            "minimum": -128,
+            "maximum": 127
+          },
+          "text": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "username": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "raw": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "displayName",
+          "timestamp",
+          "id",
+          "tags",
+          "username",
+          "channel",
+          "raw",
+          "type"
+        ]
+      },
+      "OptionalRange": {
+        "description": "An optional time range: both ends or neither.",
+        "type": "object",
+        "properties": {
+          "from": {
+            "description": "Start of the range, inclusive (RFC 3339). Requires `to`.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "to": {
+            "description": "End of the range, exclusive (RFC 3339). Requires `from`.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ChannelStats": {
+        "type": "object",
+        "properties": {
+          "messageCount": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "topChatters": {
+            "description": "The users with the most messages, most first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserStats"
+            }
+          }
+        },
+        "required": [
+          "messageCount",
+          "topChatters"
+        ]
+      },
+      "UserStats": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "description": "A numeric Twitch user id, which channels have too.",
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "examples": [
+              "71092938"
+            ]
+          },
+          "login": {
+            "description": "Left out when Twitch does not know the user or cannot be asked.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageCount": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "userId",
+          "messageCount"
+        ]
+      },
+      "TiersPath": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "description": "Id of the channel.",
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "examples": [
+              "71092938"
+            ]
+          },
+          "period": {
+            "description": "Calendar day, month or year in Europe/Moscow time.",
+            "type": "string",
+            "pattern": "^[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?$",
+            "examples": [
+              "2026-03-01",
+              "2026-03",
+              "2026"
+            ]
+          }
+        },
+        "required": [
+          "channelId",
+          "period"
+        ]
+      },
+      "TiersQuery": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "Which messages count.",
+            "default": "all",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TierMode"
+              }
+            ]
+          },
+          "excludeBots": {
+            "description": "Bot logins to leave out, repeated for several. Replaces the default\n list of common bots; give it once empty to leave out none.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "examples": [
+              [
+                "twirapp",
+                "streamelements",
+                "nightbot",
+                "moobot",
+                "mejkizbot",
+                "supibot",
+                "potatbotat",
+                "fossabot"
+              ]
+            ],
+            "default": [
+              "twirapp",
+              "streamelements",
+              "nightbot",
+              "moobot",
+              "mejkizbot",
+              "supibot",
+              "potatbotat",
+              "fossabot"
+            ]
+          }
+        }
+      },
+      "TierMode": {
+        "oneOf": [
+          {
+            "description": "All messages.",
+            "type": "string",
+            "const": "all"
+          },
+          {
+            "description": "Messages sent while the stream was live, as SullyGnome knows it.",
+            "type": "string",
+            "const": "online"
+          },
+          {
+            "description": "Messages sent while the stream was offline.",
+            "type": "string",
+            "const": "offline"
+          }
+        ]
+      },
+      "TierTable": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "description": "The requested period.",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "Time zone of the period.",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/TierMode"
+          },
+          "totalUsers": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "totalMessages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "totalUniqueMessages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "entries": {
+            "description": "Up to 500 users, the most active first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TierTableEntry"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "timezone",
+          "mode",
+          "totalUsers",
+          "totalMessages",
+          "totalUniqueMessages",
+          "entries"
+        ]
+      },
+      "TierTableEntry": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "description": "A numeric Twitch user id, which channels have too.",
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "examples": [
+              "71092938"
+            ]
+          },
+          "login": {
+            "description": "Left out when Twitch does not know the user or cannot be asked.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "uniqueMessages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "tierScore": {
+            "description": "Sum of the tier points over the window sizes.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "windows": {
+            "$ref": "#/components/schemas/Windows"
+          }
+        },
+        "required": [
+          "userId",
+          "messages",
+          "uniqueMessages",
+          "tierScore",
+          "windows"
+        ]
+      },
+      "Windows": {
+        "description": "Activity per window size.",
+        "type": "object",
+        "properties": {
+          "1m": {
+            "$ref": "#/components/schemas/WindowActivity"
+          },
+          "5m": {
+            "$ref": "#/components/schemas/WindowActivity"
+          },
+          "15m": {
+            "$ref": "#/components/schemas/WindowActivity"
+          },
+          "30m": {
+            "$ref": "#/components/schemas/WindowActivity"
+          },
+          "60m": {
+            "$ref": "#/components/schemas/WindowActivity"
+          }
+        },
+        "required": [
+          "1m",
+          "5m",
+          "15m",
+          "30m",
+          "60m"
+        ]
+      },
+      "WindowActivity": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "description": "Windows of this size with at least one message.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "rank": {
+            "description": "Rank among the users, from 1; left out when not ranked.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "tier": {
+            "description": "Tier of the rank; left out when not ranked.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "active"
+        ]
+      },
+      "ChannelUserPath": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "description": "Id of the channel.",
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "examples": [
+              "71092938"
+            ]
+          },
+          "userId": {
+            "description": "Id of the user.",
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "examples": [
+              "71092938"
+            ]
+          }
+        },
+        "required": [
+          "channelId",
+          "userId"
+        ]
+      },
+      "LogMonths": {
+        "type": "object",
+        "properties": {
+          "months": {
+            "description": "UTC months with messages as `YYYY-MM`, newest first.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "months"
+        ]
+      },
+      "SearchQuery": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "description": "Text to find in the messages, ignoring case.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "OptOutCode": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "description": "Write `!rustlog optout <code>` in a logged chat to opt out.",
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "code",
+          "expiresAt"
         ]
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "Users",
+      "description": "Look up Twitch users and the logins they had."
+    },
+    {
+      "name": "Channels",
+      "description": "The logged channels, their chat badges and streams."
+    },
+    {
+      "name": "Logs",
+      "description": "Chat messages of a channel or of one user in it."
+    },
+    {
+      "name": "Stats",
+      "description": "Message counts."
+    },
+    {
+      "name": "Tiers",
+      "description": "Users ranked by how steadily they chat."
+    },
+    {
+      "name": "Opt-out",
+      "description": "Stop being logged."
+    },
+    {
+      "name": "Admin",
+      "description": "Manage the logged channels; needs the admin API key."
+    }
+  ]
 }

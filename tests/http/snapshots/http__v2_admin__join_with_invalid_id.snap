@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_admin.rs
+expression: "request(Method::PUT, \"/api/v2/admin/channels/xqc\").admin_key().send().await"
+---
+PUT /api/v2/admin/channels/xqc
+status: 400 Bad Request
+content-type: application/problem+json
+---
+{
+  "code": "invalid_request",
+  "detail": "Invalid URL: `xqc` is not a numeric Twitch id",
+  "status": 400,
+  "title": "The request is invalid"
+}

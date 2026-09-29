@@ -1,0 +1,17 @@
+---
+source: tests/http/v2_logs.rs
+expression: "get(\"/api/v2/channels/11111/log-dates\").send().await"
+---
+GET /api/v2/channels/11111/log-dates
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "dates": [
+    "2026-03-15",
+    "2026-03-02",
+    "2026-03-01",
+    "2026-02-10"
+  ]
+}

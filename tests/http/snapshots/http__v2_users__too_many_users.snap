@@ -1,0 +1,9 @@
+---
+source: tests/http/v2_users.rs
+expression: "get(format!(\"/api/v2/users?{}\", logins.join(\"&\"))).without_body().send().await"
+---
+GET /api/v2/users?login=0&login=1&login=2&login=3&login=4&login=5&login=6&login=7&login=8&login=9&login=10&login=11&login=12&login=13&login=14&login=15&login=16&login=17&login=18&login=19&login=20&login=21&login=22&login=23&login=24&login=25&login=26&login=27&login=28&login=29&login=30&login=31&login=32&login=33&login=34&login=35&login=36&login=37&login=38&login=39&login=40&login=41&login=42&login=43&login=44&login=45&login=46&login=47&login=48&login=49&login=50&login=51&login=52&login=53&login=54&login=55&login=56&login=57&login=58&login=59&login=60&login=61&login=62&login=63&login=64&login=65&login=66&login=67&login=68&login=69&login=70&login=71&login=72&login=73&login=74&login=75&login=76&login=77&login=78&login=79&login=80&login=81&login=82&login=83&login=84&login=85&login=86&login=87&login=88&login=89&login=90&login=91&login=92&login=93&login=94&login=95&login=96&login=97&login=98&login=99&login=100
+status: 400 Bad Request
+content-type: application/problem+json
+---
+<body omitted>

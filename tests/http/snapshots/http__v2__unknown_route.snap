@@ -1,8 +1,0 @@
----
-source: tests/http/v2.rs
-expression: "get(\"/api/v2/nonexistent\").send().await"
----
-GET /api/v2/nonexistent
-status: 404 Not Found
-x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
----

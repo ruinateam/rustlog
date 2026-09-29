@@ -1,0 +1,13 @@
+---
+source: tests/http/v2_admin.rs
+expression: "request(Method::DELETE, CHANNEL).send().await"
+---
+DELETE /api/v2/admin/channels/44444
+status: 401 Unauthorized
+content-type: application/problem+json
+---
+{
+  "code": "unauthorized",
+  "status": 401,
+  "title": "The API key is missing or wrong"
+}

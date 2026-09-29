@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_stats.rs
+expression: "get(\"/api/v2/channels/11111/stats?from=2026-03-01T00:00:00Z\").send().await"
+---
+GET /api/v2/channels/11111/stats?from=2026-03-01T00:00:00Z
+status: 400 Bad Request
+content-type: application/problem+json
+---
+{
+  "code": "invalid_request",
+  "detail": "give both `from` and `to`, or neither",
+  "status": 400,
+  "title": "The request is invalid"
+}

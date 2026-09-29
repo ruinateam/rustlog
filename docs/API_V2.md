@@ -45,6 +45,7 @@ people and may change. `detail` is left out when there is nothing to add.
 | `unauthorized` | 401 | The admin API key is missing or wrong. |
 | `opted_out` | 403 | The channel or user opted out of logging. |
 | `not_found` | 404 | No such route, channel, user or data. |
+| `method_not_allowed` | 405 | The endpoint does not support the HTTP method. |
 | `upstream_unavailable` | 503 | Twitch cannot be queried yet. |
 | `internal_error` | 500 | Something went wrong on the server. |
 
@@ -77,6 +78,8 @@ channels only: `{ "setId", "version", "title", "description", "imageUrl1x",
 
 Stats take an optional range (`from` and `to`) and return
 `{ "messageCount", "topChatters": [{ "userId", "login", "messageCount" }] }`.
+Logins in stats and tiers are left out when Twitch does not know the user
+or cannot be asked; the counts do not depend on Twitch.
 
 Streams come from SullyGnome: `{ "id", "startedAt", "endedAt",
 "durationMinutes", "games" }`, where unknown fields are left out.
@@ -94,8 +97,9 @@ Streams come from SullyGnome: `{ "id", "startedAt", "endedAt",
 | `GET /channels/{channelId}/users/{userId}/logs/search?q=` | messages |
 | `GET /channels/{channelId}/users/{userId}/stats` | `{ "userId", "login", "messageCount" }` |
 
-Dates and months are UTC, newest first. Log ranges are required; search and
-user stats take an optional range.
+Dates and months are UTC, newest first. Log ranges are required; user stats
+take an optional range. Search looks through all of the user's messages in
+the channel, ignoring case.
 
 Every endpoint that returns messages takes `format`:
 
@@ -117,14 +121,15 @@ the admin firehose delivers at least once and has no durable cursor.
 ### Tiers
 
 ```text
-GET /channels/{channelId}/tiers/{period}?mode=all&excludeBots=nightbot,moobot
+GET /channels/{channelId}/tiers/{period}?mode=all&excludeBots=nightbot&excludeBots=moobot
 ```
 
 `period` is a calendar day (`2026-03-01`), month (`2026-03`) or year
 (`2026`) in the Europe/Moscow time zone. `mode` counts all messages (`all`,
 the default), only those sent while the stream was live (`online`) or while
-it was offline (`offline`). `excludeBots` replaces the default list of bots
-left out of the table.
+it was offline (`offline`), as SullyGnome knows the streams. `excludeBots`,
+repeated for several logins, replaces the default list of bots left out of
+the table; `excludeBots=` alone leaves out none.
 
 ```json
 {

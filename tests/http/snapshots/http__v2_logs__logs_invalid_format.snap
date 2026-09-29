@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_logs.rs
+expression: "get(format!(\"{USER_LOGS}?{MARCH}&format=bogus\")).send().await"
+---
+GET /api/v2/channels/11111/users/22222/logs?from=2026-03-01T00:00:00Z&to=2026-04-01T00:00:00Z&format=bogus
+status: 400 Bad Request
+content-type: application/problem+json
+---
+{
+  "code": "invalid_request",
+  "detail": "Failed to deserialize query string: format: unknown variant `bogus`, expected one of `basic-json`, `full-json`, `ndjson`, `text`, `raw`",
+  "status": 400,
+  "title": "The request is invalid"
+}

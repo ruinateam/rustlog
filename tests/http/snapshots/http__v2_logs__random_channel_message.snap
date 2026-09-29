@@ -1,0 +1,10 @@
+---
+source: tests/http/v2_logs.rs
+expression: "get(\"/api/v2/channels/11111/logs/random\").without_body().send().await"
+---
+GET /api/v2/channels/11111/logs/random
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+<body omitted>

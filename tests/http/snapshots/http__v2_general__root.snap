@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_general.rs
+expression: "get(\"/api/v2\").send().await"
+---
+GET /api/v2
+status: 404 Not Found
+content-type: application/problem+json
+---
+{
+  "code": "not_found",
+  "detail": "no such endpoint",
+  "status": 404,
+  "title": "The requested data was not found"
+}

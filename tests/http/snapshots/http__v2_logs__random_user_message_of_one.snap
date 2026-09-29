@@ -1,0 +1,10 @@
+---
+source: tests/http/v2_logs.rs
+expression: "get(\"/api/v2/channels/11111/users/33333/logs/random?format=text\").without_body().send().await"
+---
+GET /api/v2/channels/11111/users/33333/logs/random?format=text
+status: 200 OK
+content-type: text/plain; charset=utf-8
+cache-control: no-cache
+---
+<body omitted>

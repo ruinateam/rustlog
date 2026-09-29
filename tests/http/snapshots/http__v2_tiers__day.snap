@@ -1,0 +1,85 @@
+---
+source: tests/http/v2_tiers.rs
+expression: "get(\"/api/v2/channels/11111/tiers/2026-03-01\").send().await"
+---
+GET /api/v2/channels/11111/tiers/2026-03-01
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "entries": [
+    {
+      "messages": 2,
+      "tierScore": 50,
+      "uniqueMessages": 2,
+      "userId": "22222",
+      "windows": {
+        "15m": {
+          "active": 2,
+          "rank": 1,
+          "tier": "HT1"
+        },
+        "1m": {
+          "active": 2,
+          "rank": 1,
+          "tier": "HT1"
+        },
+        "30m": {
+          "active": 2,
+          "rank": 1,
+          "tier": "HT1"
+        },
+        "5m": {
+          "active": 2,
+          "rank": 1,
+          "tier": "HT1"
+        },
+        "60m": {
+          "active": 2,
+          "rank": 1,
+          "tier": "HT1"
+        }
+      }
+    },
+    {
+      "messages": 1,
+      "tierScore": 45,
+      "uniqueMessages": 1,
+      "userId": "33333",
+      "windows": {
+        "15m": {
+          "active": 1,
+          "rank": 2,
+          "tier": "LT1"
+        },
+        "1m": {
+          "active": 1,
+          "rank": 2,
+          "tier": "LT1"
+        },
+        "30m": {
+          "active": 1,
+          "rank": 2,
+          "tier": "LT1"
+        },
+        "5m": {
+          "active": 1,
+          "rank": 2,
+          "tier": "LT1"
+        },
+        "60m": {
+          "active": 1,
+          "rank": 2,
+          "tier": "LT1"
+        }
+      }
+    }
+  ],
+  "mode": "all",
+  "period": "2026-03-01",
+  "timezone": "Europe/Moscow",
+  "totalMessages": 3,
+  "totalUniqueMessages": 3,
+  "totalUsers": 2
+}

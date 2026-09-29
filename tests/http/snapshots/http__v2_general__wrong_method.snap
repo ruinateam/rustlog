@@ -1,0 +1,13 @@
+---
+source: tests/http/v2_general.rs
+expression: "request(Method::POST, \"/api/v2/channels\").send().await"
+---
+POST /api/v2/channels
+status: 405 Method Not Allowed
+content-type: application/problem+json
+---
+{
+  "code": "method_not_allowed",
+  "status": 405,
+  "title": "The endpoint does not support this method"
+}

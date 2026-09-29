@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_tiers.rs
+expression: "get(\"/api/v2/channels/11111/tiers/2026-02-30\").send().await"
+---
+GET /api/v2/channels/11111/tiers/2026-02-30
+status: 400 Bad Request
+content-type: application/problem+json
+---
+{
+  "code": "invalid_request",
+  "detail": "Invalid URL: `2026-02-30` is not a day (`YYYY-MM-DD`), month (`YYYY-MM`) or year (`YYYY`)",
+  "status": 400,
+  "title": "The request is invalid"
+}

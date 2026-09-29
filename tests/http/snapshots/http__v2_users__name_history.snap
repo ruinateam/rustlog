@@ -1,0 +1,18 @@
+---
+source: tests/http/v2_users.rs
+expression: "get(\"/api/v2/users/22222/name-history\").send().await"
+---
+GET /api/v2/users/22222/name-history
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "names": [
+    {
+      "firstSeenAt": "2026-02-10T05:00:00Z",
+      "lastSeenAt": "2026-03-15T17:00:00Z",
+      "login": "alice"
+    }
+  ]
+}

@@ -4,7 +4,7 @@ mod firehose;
 
 use crate::{
     app::{App, BotMessage},
-    web::legacy::error::Error,
+    web::{AdminApiKey, legacy::error::Error},
 };
 use aide::{
     axum::{
@@ -25,7 +25,6 @@ use axum::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
 pub fn router() -> ApiRouter<App> {
@@ -56,11 +55,6 @@ pub fn router() -> ApiRouter<App> {
         )
         .route_layer(middleware::from_fn(admin_auth))
 }
-
-/// The configured admin API key, provided to [`admin_auth`] as a request
-/// extension so that the routes can be built without the app state.
-#[derive(Clone)]
-pub struct AdminApiKey(pub Option<Arc<str>>);
 
 async fn admin_auth(
     Extension(AdminApiKey(admin_key)): Extension<AdminApiKey>,

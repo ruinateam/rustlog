@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_users.rs
+expression: "get(\"/api/v2/users\").send().await"
+---
+GET /api/v2/users
+status: 400 Bad Request
+content-type: application/problem+json
+---
+{
+  "code": "invalid_request",
+  "detail": "give at least one `login` or `id`",
+  "status": 400,
+  "title": "The request is invalid"
+}

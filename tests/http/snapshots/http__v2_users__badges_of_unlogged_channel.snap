@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_users.rs
+expression: "get(\"/api/v2/channels/99999/badges\").send().await"
+---
+GET /api/v2/channels/99999/badges
+status: 404 Not Found
+content-type: application/problem+json
+---
+{
+  "code": "not_found",
+  "detail": "the channel is not logged",
+  "status": 404,
+  "title": "The requested data was not found"
+}

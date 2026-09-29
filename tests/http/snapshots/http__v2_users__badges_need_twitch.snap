@@ -1,0 +1,13 @@
+---
+source: tests/http/v2_users.rs
+expression: "get(\"/api/v2/channels/11111/badges\").send().await"
+---
+GET /api/v2/channels/11111/badges
+status: 503 Service Unavailable
+content-type: application/problem+json
+---
+{
+  "code": "upstream_unavailable",
+  "status": 503,
+  "title": "Twitch cannot be queried yet"
+}

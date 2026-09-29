@@ -1,0 +1,14 @@
+---
+source: tests/http/v2_logs.rs
+expression: "get(\"/api/v2/channels/11111/users/22222/logs/search?q=%20\").send().await"
+---
+GET /api/v2/channels/11111/users/22222/logs/search?q=%20
+status: 400 Bad Request
+content-type: application/problem+json
+---
+{
+  "code": "invalid_request",
+  "detail": "`q` must not be empty",
+  "status": 400,
+  "title": "The request is invalid"
+}

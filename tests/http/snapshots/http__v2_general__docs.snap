@@ -1,0 +1,9 @@
+---
+source: tests/http/v2_general.rs
+expression: "get(\"/api/v2/docs\").without_body().send().await"
+---
+GET /api/v2/docs
+status: 200 OK
+content-type: text/html; charset=utf-8
+---
+<body omitted>

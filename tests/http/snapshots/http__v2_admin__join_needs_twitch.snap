@@ -1,0 +1,13 @@
+---
+source: tests/http/v2_admin.rs
+expression: "request(Method::PUT, CHANNEL).admin_key().send().await"
+---
+PUT /api/v2/admin/channels/44444
+status: 503 Service Unavailable
+content-type: application/problem+json
+---
+{
+  "code": "upstream_unavailable",
+  "status": 503,
+  "title": "Twitch cannot be queried yet"
+}

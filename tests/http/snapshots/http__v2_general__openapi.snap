@@ -1,0 +1,9 @@
+---
+source: tests/http/v2_general.rs
+expression: "get(\"/api/v2/openapi.json\").without_body().send().await"
+---
+GET /api/v2/openapi.json
+status: 200 OK
+content-type: application/json
+---
+<body omitted>
