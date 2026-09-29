@@ -3,7 +3,7 @@
 use crate::support::TestDb;
 use flate2::{Compression, write::GzEncoder};
 use insta::assert_snapshot;
-use rustlog::migrator::Migrator;
+use rustlog::tools::migrate::{self, MigrateOptions};
 use std::{fs, io::Write, path::Path};
 use tempfile::TempDir;
 
@@ -47,14 +47,16 @@ async fn imports_plain_and_compressed_days() {
     let test_db = TestDb::start().await;
     let logs = justlog_logs();
 
-    let migrator = Migrator::new(
+    migrate::run(
         test_db.db.clone(),
-        logs.path().display().to_string(),
-        Vec::new(),
+        MigrateOptions {
+            source_dir: logs.path().to_owned(),
+            channel_ids: Vec::new(),
+            jobs: 2,
+        },
     )
     .await
     .unwrap();
-    migrator.run(2).await.unwrap();
 
     assert_snapshot!(test_db.messages().await);
     test_db.stop().await;
@@ -65,14 +67,16 @@ async fn only_the_requested_channels() {
     let test_db = TestDb::start().await;
     let logs = justlog_logs();
 
-    let migrator = Migrator::new(
+    migrate::run(
         test_db.db.clone(),
-        logs.path().display().to_string(),
-        vec!["99999".to_owned()],
+        MigrateOptions {
+            source_dir: logs.path().to_owned(),
+            channel_ids: vec!["99999".to_owned()],
+            jobs: 1,
+        },
     )
     .await
     .unwrap();
-    migrator.run(1).await.unwrap();
 
     assert_snapshot!(test_db.messages().await);
     test_db.stop().await;

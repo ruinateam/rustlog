@@ -6,12 +6,10 @@ pub mod config;
 pub mod domain;
 pub mod irc;
 pub mod logging;
-pub mod maintenance;
-pub mod migrator;
-pub mod mirror;
 pub mod services;
 pub mod state;
 pub mod storage;
+pub mod tools;
 pub mod twitch;
 pub mod web;
 

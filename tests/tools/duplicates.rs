@@ -2,7 +2,7 @@
 
 use crate::support::TestDb;
 use insta::assert_snapshot;
-use rustlog::maintenance::{self, CleanupDuplicateIdsOptions};
+use rustlog::tools::duplicates::{self, CleanupDuplicateIdsOptions};
 
 /// In `testchan`: id 1 three times, id 2 twice, id 3 once and the nil id,
 /// which stands for "no id", twice. In `otherchan`: id 7 twice.
@@ -37,7 +37,7 @@ async fn dry_run_changes_nothing() {
     let test_db = TestDb::start().await;
     test_db.execute(DUPLICATES).await;
 
-    maintenance::cleanup_duplicate_ids(test_db.db.clone(), options(false))
+    duplicates::run(test_db.db.clone(), options(false))
         .await
         .unwrap();
 
@@ -53,7 +53,7 @@ async fn execute_keeps_one_row_per_id() {
     test_db.execute(DUPLICATES).await;
     let tables_before = test_db.tables().await;
 
-    maintenance::cleanup_duplicate_ids(test_db.db.clone(), options(true))
+    duplicates::run(test_db.db.clone(), options(true))
         .await
         .unwrap();
 

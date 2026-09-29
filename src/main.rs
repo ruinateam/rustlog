@@ -12,12 +12,10 @@ use rustlog::{
     bot,
     config::Config,
     logging::{self, LoggingConfig},
-    maintenance,
-    migrator::Migrator,
-    mirror,
     services::{sully::SullyGnome, tiers::Tiers},
     state::OperationalState,
     storage::{setup_db, writer::create_writer},
+    tools,
     twitch::Twitch,
     web,
 };
@@ -72,90 +70,10 @@ async fn main() -> anyhow::Result<()> {
     match args.subcommand {
         None => run(config, db).await,
         Some(Command::Openapi { .. }) => unreachable!("handled before loading the config"),
-        Some(Command::Migrate {
-            source_dir,
-            channel_id,
-            jobs,
-        }) => migrate(db, source_dir, channel_id, jobs).await,
-        Some(Command::Mirror {
-            base_url,
-            local_cache,
-            channel,
-            year,
-            month,
-            day,
-            batch,
-            http_concurrency,
-            proxy,
-            rps,
-        }) => {
-            mirror::run(
-                db,
-                mirror::MirrorOptions {
-                    base_url,
-                    local_cache,
-                    channel,
-                    year,
-                    month,
-                    day,
-                    batch,
-                    http_concurrency,
-                    proxies: proxy,
-                    rps,
-                },
-            )
-            .await
-        }
-        Some(Command::FillMissing {
-            channel,
-            year,
-            api_base,
-            batch,
-            http_concurrency,
-            proxy,
-            rps,
-            exclude_instance,
-            dry_run,
-            repair_existing,
-            deep,
-        }) => {
-            maintenance::fill_missing(
-                db,
-                maintenance::FillMissingOptions {
-                    channels: channel,
-                    year,
-                    api_base,
-                    batch,
-                    http_concurrency,
-                    proxies: proxy,
-                    rps,
-                    exclude_instances: exclude_instance,
-                    dry_run,
-                    repair_existing,
-                    deep,
-                },
-            )
-            .await
-        }
-        Some(Command::CleanupDuplicateIds {
-            channel,
-            year,
-            execute,
-            sample_limit,
-            wait_timeout,
-        }) => {
-            maintenance::cleanup_duplicate_ids(
-                db,
-                maintenance::CleanupDuplicateIdsOptions {
-                    channels: channel,
-                    year,
-                    execute,
-                    sample_limit,
-                    wait_timeout,
-                },
-            )
-            .await
-        }
+        Some(Command::Migrate(options)) => tools::migrate::run(db, options).await,
+        Some(Command::Mirror(options)) => tools::mirror::run(db, options).await,
+        Some(Command::FillMissing(options)) => tools::fill_missing::run(db, options).await,
+        Some(Command::CleanupDuplicateIds(options)) => tools::duplicates::run(db, options).await,
     }
 }
 
@@ -265,16 +183,6 @@ fn write_openapi(out_dir: &Path) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-async fn migrate(
-    db: clickhouse::Client,
-    source_logs_path: String,
-    channel_ids: Vec<String>,
-    jobs: usize,
-) -> anyhow::Result<()> {
-    let migrator = Migrator::new(db, source_logs_path, channel_ids).await?;
-    migrator.run(jobs).await
 }
 
 #[cfg(unix)]

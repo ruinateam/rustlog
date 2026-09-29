@@ -5,19 +5,29 @@ use crate::{
     support::{FakeRemote, TestDb, day_of_logs},
 };
 use insta::assert_snapshot;
-use rustlog::{mirror, state::OperationalState};
+use rustlog::{
+    state::OperationalState,
+    tools::mirror::{self, MirrorOptions, TransferOptions},
+};
 use serde_json::json;
 use std::{fs, path::Path, sync::Arc};
 use tempfile::TempDir;
 
-fn options(base_url: &str, local_cache: Option<&Path>) -> mirror::MirrorOptions {
-    mirror::MirrorOptions {
+fn options(base_url: &str, local_cache: Option<&Path>) -> MirrorOptions {
+    MirrorOptions {
         base_url: base_url.to_owned(),
-        local_cache: local_cache.map(|path| path.display().to_string()),
+        local_cache: local_cache.map(Path::to_owned),
         channel: "testchan".to_owned(),
         year: None,
         month: None,
         day: None,
+        transfer: transfer_options(),
+    }
+}
+
+/// No rate limit worth mentioning, so that the tests do not wait.
+pub fn transfer_options() -> TransferOptions {
+    TransferOptions {
         batch: 25_000,
         http_concurrency: 4,
         proxies: Vec::new(),

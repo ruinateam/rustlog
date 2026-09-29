@@ -2,11 +2,13 @@
 //! missing (or, with `--repair-existing`, incomplete) ones from mirrors.
 
 use crate::{
-    first_day, second_day,
+    first_day,
+    mirror::transfer_options,
+    second_day,
     support::{FakeRemote, TestDb, day_of_logs},
 };
 use insta::assert_snapshot;
-use rustlog::maintenance::{self, FillMissingOptions};
+use rustlog::tools::fill_missing::{self, FillMissingOptions};
 use serde_json::json;
 
 /// Only the first message of 2026-03-01 is stored locally.
@@ -22,10 +24,7 @@ fn options(api_base: &str) -> FillMissingOptions {
         channels: vec!["testchan".to_owned()],
         year: 2026,
         api_base: api_base.to_owned(),
-        batch: 25_000,
-        http_concurrency: 4,
-        proxies: Vec::new(),
-        rps: 1000.0,
+        transfer: transfer_options(),
         exclude_instances: Vec::new(),
         dry_run: false,
         repair_existing: false,
@@ -65,7 +64,7 @@ async fn imports_missing_days_only() {
     test_db.execute(INCOMPLETE_FIRST_DAY).await;
     let remote = remote_with_days(&["1", "2"]).await;
 
-    maintenance::fill_missing(test_db.db.clone(), options(&remote.base_url))
+    fill_missing::run(test_db.db.clone(), options(&remote.base_url))
         .await
         .unwrap();
 
@@ -81,7 +80,7 @@ async fn repairs_incomplete_days() {
 
     let mut options = options(&remote.base_url);
     options.repair_existing = true;
-    maintenance::fill_missing(test_db.db.clone(), options)
+    fill_missing::run(test_db.db.clone(), options)
         .await
         .unwrap();
 
@@ -98,7 +97,7 @@ async fn dry_run_imports_nothing() {
     let mut options = options(&remote.base_url);
     options.dry_run = true;
     options.repair_existing = true;
-    maintenance::fill_missing(test_db.db.clone(), options)
+    fill_missing::run(test_db.db.clone(), options)
         .await
         .unwrap();
 
@@ -111,7 +110,7 @@ async fn fails_when_no_mirror_has_a_day() {
     let test_db = TestDb::start().await;
     let remote = remote_with_days(&["2", "3"]).await;
 
-    let error = maintenance::fill_missing(test_db.db.clone(), options(&remote.base_url))
+    let error = fill_missing::run(test_db.db.clone(), options(&remote.base_url))
         .await
         .unwrap_err();
 
