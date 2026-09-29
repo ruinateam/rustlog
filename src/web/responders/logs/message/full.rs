@@ -33,7 +33,7 @@ mod tests {
     use super::{FullMessage, MessageType};
     use crate::{
         db::schema::{StructuredMessage, UnstructuredMessage},
-        logs::schema::message::{BasicMessage, ResponseMessage},
+        web::responders::logs::message::{BasicMessage, ResponseMessage},
     };
     use chrono::{TimeZone, Utc};
     use pretty_assertions::assert_eq;

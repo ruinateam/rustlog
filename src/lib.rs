@@ -6,7 +6,7 @@ pub mod config;
 pub mod db;
 pub mod domain;
 pub mod error;
-pub mod logs;
+pub mod irc;
 pub mod maintenance;
 pub mod migrator;
 pub mod mirror;

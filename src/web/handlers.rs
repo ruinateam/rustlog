@@ -11,15 +11,15 @@ use super::{
 };
 use crate::{
     app::App,
+    db::stream::LogsStream,
     db::{
         self, read_available_channel_logs, read_available_user_logs, read_channel,
         read_random_channel_line, read_random_user_line, read_user,
     },
     domain::tiers::{RankedTiers, TierPeriod, TIMEZONE},
     error::Error,
-    logs::{schema::LogRangeParams, stream::LogsStream},
     services::{self, sully},
-    web::schema::{LogsPathDate, SullyStreamsResponse, TierModeQuery},
+    web::schema::{LogRangeParams, LogsPathDate, SullyStreamsResponse, TierModeQuery},
     Result,
 };
 use aide::axum::IntoApiResponse;

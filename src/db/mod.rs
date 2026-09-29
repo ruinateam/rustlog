@@ -1,10 +1,12 @@
 mod migrations;
 pub mod schema;
+pub mod stream;
 pub mod writer;
 use std::collections::HashSet;
 
 pub use migrations::run as setup_db;
 use serde::Deserialize;
+use stream::{FlushBufferResponse, LogsStream};
 use writer::FlushBuffer;
 
 use crate::{
@@ -14,7 +16,6 @@ use crate::{
         tiers::UserWindows,
     },
     error::Error,
-    logs::stream::{FlushBufferResponse, LogsStream},
     Result,
 };
 use chrono::{DateTime, Duration, Utc};

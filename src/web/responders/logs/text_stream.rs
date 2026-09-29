@@ -1,4 +1,4 @@
-use crate::{logs::stream::LogsStream, Result};
+use crate::{db::stream::LogsStream, Result};
 use futures::{stream::TryChunks, Future, Stream, StreamExt, TryStreamExt};
 use std::{
     fmt::Write,

@@ -3,7 +3,7 @@ mod reader;
 use self::reader::{LogsReader, COMPRESSED_CHANNEL_FILE, UNCOMPRESSED_CHANNEL_FILE};
 use crate::{
     db::schema::{StructuredMessage, UnstructuredMessage, MESSAGES_STRUCTURED_TABLE},
-    logs::extract::{extract_raw_timestamp, extract_user_id},
+    irc::{extract_raw_timestamp, extract_user_id},
     migrator::reader::ChannelLogDateMap,
     state::OperationalState,
 };

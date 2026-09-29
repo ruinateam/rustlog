@@ -1,7 +1,7 @@
 use crate::{
     app::App,
     db::schema::StructuredMessage,
-    logs::schema::message::{BasicMessage, ResponseMessage},
+    web::responders::logs::message::{BasicMessage, ResponseMessage},
     ShutdownRx,
 };
 use axum::{

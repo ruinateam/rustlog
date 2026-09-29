@@ -1,13 +1,15 @@
 mod json_stream;
+pub mod message;
 mod ndjson_stream;
 mod text_stream;
 
 pub use json_stream::JsonResponseType;
 
+use self::message::FullMessage;
 use self::{
     json_stream::JsonLogsStream, ndjson_stream::NdJsonLogsStream, text_stream::TextLogsStream,
 };
-use crate::logs::{schema::message::FullMessage, stream::LogsStream};
+use crate::db::stream::LogsStream;
 use aide::OperationOutput;
 use axum::{
     body::Body,

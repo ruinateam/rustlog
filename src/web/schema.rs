@@ -2,7 +2,7 @@ use super::responders::logs::{JsonResponseType, LogsResponseType};
 use crate::{
     domain::{
         self,
-        logs::{LogDate, LogsQuery},
+        logs::{LogDate, LogsQuery, TimeRange},
         stats::{NameHistoryEntry, UserMessageCount},
     },
     services::sully::{Stream, StreamList},
@@ -125,6 +125,24 @@ pub struct ChannelYearPath {
     #[serde(flatten)]
     pub channel_info: LogsPathChannel,
     pub year: String,
+}
+
+#[derive(Deserialize, JsonSchema, Clone, Copy, Debug)]
+pub struct LogRangeParams {
+    /// RFC 3339 start date
+    pub from: Option<DateTime<Utc>>,
+    /// RFC 3339 end date
+    pub to: Option<DateTime<Utc>>,
+}
+
+impl LogRangeParams {
+    pub fn range(&self) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+        self.from.zip(self.to)
+    }
+
+    pub fn time_range(&self) -> Option<TimeRange> {
+        self.range().map(|(from, to)| TimeRange { from, to })
+    }
 }
 
 #[derive(Deserialize, Debug, JsonSchema, Clone, Copy)]
