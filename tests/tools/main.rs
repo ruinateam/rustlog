@@ -8,6 +8,7 @@
 
 mod support;
 
+mod duplicates;
 mod fill_missing;
 mod migrate;
 mod mirror;

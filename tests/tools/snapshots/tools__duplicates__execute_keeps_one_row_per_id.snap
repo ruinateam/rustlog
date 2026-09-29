@@ -1,0 +1,11 @@
+---
+source: tests/tools/duplicates.rs
+expression: test_db.messages().await
+---
+2026-03-01 07:00:00.000 00000000-0000-4000-8000-000000000001 #testchan(11111) alice(22222) "Alice" color=None badges=[]: first copy
+2026-03-01 08:00:00.000 00000000-0000-4000-8000-000000000002 #testchan(11111) bob(33333) "Bob" color=None badges=[]: bob first
+2026-03-01 09:00:00.000 00000000-0000-4000-8000-000000000003 #testchan(11111) bob(33333) "Bob" color=None badges=[]: unique
+2026-03-01 10:00:00.000 00000000-0000-0000-0000-000000000000 #testchan(11111) () "" color=None badges=[]: no id
+2026-03-01 10:00:01.000 00000000-0000-0000-0000-000000000000 #testchan(11111) () "" color=None badges=[]: no id either
+2026-03-01 11:00:00.000 00000000-0000-4000-8000-000000000007 #otherchan(55555) alice(22222) "Alice" color=None badges=[]: other first
+2026-03-01 11:00:01.000 00000000-0000-4000-8000-000000000007 #otherchan(55555) alice(22222) "Alice" color=None badges=[]: other second

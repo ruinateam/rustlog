@@ -1,4 +1,4 @@
-use anyhow::{Context, anyhow};
+use anyhow::{Context, anyhow, bail};
 use chrono::{Datelike, NaiveDate};
 use clickhouse::{Client, Row};
 use futures::{StreamExt, stream};
@@ -352,7 +352,6 @@ pub async fn cleanup_duplicate_ids(
     db: Client,
     options: CleanupDuplicateIdsOptions,
 ) -> anyhow::Result<()> {
-    let _wait_timeout = options.wait_timeout;
     let summary = duplicate_summary(&db, &options).await?;
     if summary.is_empty() {
         info!("no duplicate message ids in scope");
@@ -392,9 +391,7 @@ pub async fn cleanup_duplicate_ids(
         info!("duplicate cleanup finished");
         Ok(())
     } else {
-        Err(anyhow!(
-            "Duplicate cleanup finished with remaining duplicates"
-        ))
+        Err(anyhow!("duplicates remain after the cleanup"))
     }
 }
 
@@ -738,7 +735,7 @@ async fn duplicate_summary(
             channel_login,
             count() AS rows,
             uniqExact(id) AS unique_ids,
-            rows - unique_ids AS duplicate_rows
+            toUInt64(rows - unique_ids) AS duplicate_rows
         FROM message_structured
         WHERE {filter}
         GROUP BY channel_login
@@ -774,180 +771,145 @@ async fn duplicate_samples(
     Ok(db.query(&query).fetch_all().await?)
 }
 
+/// Keeps the earliest copy of every duplicated id and deletes the others.
+///
+/// Only the duplicated rows are touched: the kept copies are set aside, all
+/// copies are deleted with a mutation, and the kept copies are inserted
+/// back. Should the mutation not finish in time, the kept copies stay in
+/// their table so that they can be inserted back by hand.
 async fn execute_duplicate_cleanup(
     db: &Client,
     options: &CleanupDuplicateIdsOptions,
 ) -> anyhow::Result<()> {
     let filter = duplicate_scope_filter(options);
+    let run_id = format!("{}_{}", std::process::id(), chrono::Utc::now().timestamp());
+    let duplicate_ids_table = format!("message_structured_duplicate_ids_{run_id}");
+    let kept_copies_table = format!("message_structured_kept_copies_{run_id}");
 
-    // Check scope row count to estimate impact.
-    let scope_rows: u64 = db
-        .query(&format!(
-            "SELECT count() FROM message_structured WHERE {filter}"
-        ))
-        .fetch_one()
-        .await?;
-    info!(rows = scope_rows, "rows in cleanup scope");
-
-    let new_table = format!(
-        "message_structured_dedup_{}_{}",
-        std::process::id(),
-        chrono::Utc::now().timestamp()
-    );
-    let old_table = format!(
-        "message_structured_old_{}_{}",
-        std::process::id(),
-        chrono::Utc::now().timestamp()
-    );
-
-    info!(table = %new_table, "creating the new table");
+    info!(table = %duplicate_ids_table, "collecting duplicate message ids");
     db.query(&format!(
         "
-        CREATE TABLE {new_table} AS message_structured
+        CREATE TABLE {duplicate_ids_table} (channel_login String, id UUID)
         ENGINE = MergeTree
-        PARTITION BY toYYYYMM(timestamp)
-        ORDER BY (channel_id, user_id, timestamp)
+        ORDER BY (channel_login, id)
         "
     ))
     .execute()
     .await?;
-
-    let cleanup_result = async {
-        // Step 1: Materialize duplicate IDs into a small temp table (avoids re-evaluating the heavy GROUP BY).
-        let dup_table = format!("{}_dup_ids", new_table);
-        info!(table = %dup_table, "creating the duplicate id table");
-        db.query(&format!(
-            "
-            CREATE TABLE {dup_table} (channel_login String, id UUID)
-            ENGINE = Memory
-            "
-        ))
-        .execute()
+    db.query(&format!(
+        "
+        INSERT INTO {duplicate_ids_table}
+        SELECT channel_login, id
+        FROM message_structured
+        WHERE {filter}
+        GROUP BY channel_login, id
+        HAVING count() > 1
+        SETTINGS max_bytes_before_external_group_by = 1000000000
+        "
+    ))
+    .execute()
+    .await?;
+    let duplicate_ids: u64 = db
+        .query(&format!("SELECT count() FROM {duplicate_ids_table}"))
+        .fetch_one()
         .await?;
+    info!(ids = duplicate_ids, "collected duplicate message ids");
 
-        info!("finding duplicate message ids");
-        db.query(&format!(
-            "
-            INSERT INTO {dup_table}
-            SELECT channel_login, id
-            FROM message_structured
-            WHERE {filter}
-            GROUP BY channel_login, id
-            HAVING count() > 1
-            SETTINGS max_bytes_before_external_group_by = 1000000000
-            "
-        ))
-        .execute()
+    let duplicates = format!(
+        "{filter} AND (channel_login, id) IN (SELECT channel_login, id FROM {duplicate_ids_table})"
+    );
+
+    info!(table = %kept_copies_table, "setting the earliest copies aside");
+    db.query(&format!(
+        "CREATE TABLE {kept_copies_table} AS message_structured"
+    ))
+    .execute()
+    .await?;
+    db.query(&format!(
+        "
+        INSERT INTO {kept_copies_table}
+        SELECT *
+        FROM message_structured
+        WHERE {duplicates}
+        ORDER BY timestamp
+        LIMIT 1 BY channel_login, id
+        "
+    ))
+    .execute()
+    .await?;
+    let kept_copies: u64 = db
+        .query(&format!("SELECT count() FROM {kept_copies_table}"))
+        .fetch_one()
         .await?;
+    if kept_copies != duplicate_ids {
+        bail!(
+            "set {kept_copies} copies aside for {duplicate_ids} duplicate ids; nothing was deleted"
+        );
+    }
 
-        let dup_count: u64 = db
-            .query(&format!("SELECT count() FROM {dup_table}"))
-            .fetch_one()
-            .await?;
-        info!(ids = dup_count, "found duplicate message ids");
+    info!("deleting all copies of the duplicate ids");
+    db.query(&format!(
+        "ALTER TABLE message_structured DELETE WHERE {duplicates}"
+    ))
+    .execute()
+    .await?;
+    wait_for_mutations(db, Duration::from_secs(options.wait_timeout))
+        .await
+        .with_context(|| {
+            format!(
+                "the kept copies are in {kept_copies_table}: once the deletion is done, insert them into message_structured"
+            )
+        })?;
 
-        // Step 2: Insert month-by-month to stay within memory limits.
-        let partitions: Vec<String> = db
+    info!(rows = kept_copies, "inserting the kept copies back");
+    db.query(&format!(
+        "INSERT INTO message_structured SELECT * FROM {kept_copies_table}"
+    ))
+    .execute()
+    .await?;
+
+    for table in [&duplicate_ids_table, &kept_copies_table] {
+        db.query(&format!("DROP TABLE {table}")).execute().await?;
+    }
+    Ok(())
+}
+
+/// Waits until the mutations of `message_structured` are done.
+async fn wait_for_mutations(db: &Client, timeout: Duration) -> anyhow::Result<()> {
+    #[derive(Row, Deserialize)]
+    struct PendingMutations {
+        count: u64,
+        fail_reason: String,
+    }
+
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let pending: PendingMutations = db
             .query(
                 "
-                SELECT DISTINCT partition
-                FROM system.parts
+                SELECT count() AS count, max(latest_fail_reason) AS fail_reason
+                FROM system.mutations
                 WHERE database = currentDatabase()
                   AND table = 'message_structured'
-                  AND active = 1
-                ORDER BY partition
+                  AND is_done = 0
                 ",
             )
-            .fetch_all()
-            .await?;
-
-        let mut non_dup: u64 = 0;
-        for partition in &partitions {
-            info!(%partition, "copying rows without duplicates");
-            db.query(&format!(
-                "
-                INSERT INTO {new_table}
-                SELECT * FROM message_structured
-                WHERE toYYYYMM(timestamp) = {partition}
-                  AND {filter}
-                  AND (channel_login, id) NOT IN (SELECT channel_login, id FROM {dup_table})
-                "
-            ))
-            .execute()
-            .await?;
-            let n: u64 = db
-                .query(&format!("SELECT count() FROM {new_table}"))
-                .fetch_one()
-                .await?;
-            let batch = n - non_dup;
-            non_dup = n;
-            info!(%partition, rows = batch, "copied rows without duplicates");
-        }
-        info!(rows = non_dup, "copied all rows without duplicates");
-
-        // Insert one row per duplicate month-by-month.
-        for partition in &partitions {
-            info!(%partition, "copying one row per duplicate id");
-            db.query(&format!(
-                "
-                INSERT INTO {new_table}
-                SELECT * FROM message_structured
-                WHERE toYYYYMM(timestamp) = {partition}
-                  AND {filter}
-                  AND (channel_login, id) IN (SELECT channel_login, id FROM {dup_table})
-                ORDER BY timestamp
-                LIMIT 1 BY id
-                "
-            ))
-            .execute()
-            .await?;
-        }
-
-        let total: u64 = db
-            .query(&format!("SELECT count() FROM {new_table}"))
             .fetch_one()
             .await?;
-        let dup_rows = total - non_dup;
-        info!(
-            rows = total,
-            kept_duplicates = dup_rows,
-            "filled the new table"
-        );
-
-        info!(table = %dup_table, "dropping the duplicate id table");
-        let _ = db
-            .query(&format!("DROP TABLE IF EXISTS {dup_table}"))
-            .execute()
-            .await;
-
-        // Atomic swap.
-        info!("swapping the tables");
-        db.query(&format!(
-            "
-            RENAME TABLE message_structured TO {old_table},
-                         {new_table} TO message_structured
-            "
-        ))
-        .execute()
-        .await?;
-
-        info!(table = %old_table, "dropping the old table");
-        db.query(&format!("DROP TABLE IF EXISTS {old_table}"))
-            .execute()
-            .await?;
-
-        anyhow::Ok(())
+        if pending.count == 0 {
+            return Ok(());
+        }
+        if !pending.fail_reason.is_empty() {
+            bail!("the deletion failed: {}", pending.fail_reason);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            bail!(
+                "the deletion did not finish within {} seconds",
+                timeout.as_secs()
+            );
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
-    .await;
-
-    // If anything failed before the swap, drop the temporary new table.
-    if cleanup_result.is_err() {
-        let _ = db
-            .query(&format!("DROP TABLE IF EXISTS {new_table}"))
-            .execute()
-            .await;
-    }
-    cleanup_result
 }
 
 fn duplicate_scope_filter(options: &CleanupDuplicateIdsOptions) -> String {

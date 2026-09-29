@@ -113,7 +113,7 @@ pub enum Command {
         /// Number of duplicate examples to print
         #[clap(long, default_value_t = 30)]
         sample_limit: usize,
-        /// Seconds to wait for ClickHouse delete mutations
+        /// Seconds to wait for the ClickHouse mutation that deletes the duplicates
         #[clap(long, default_value_t = 600)]
         wait_timeout: u64,
     },

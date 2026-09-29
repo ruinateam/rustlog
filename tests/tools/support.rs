@@ -106,6 +106,16 @@ impl TestDb {
         rendered
     }
 
+    pub async fn tables(&self) -> Vec<String> {
+        self.db
+            .query(
+                "SELECT name FROM system.tables WHERE database = currentDatabase() ORDER BY name",
+            )
+            .fetch_all()
+            .await
+            .unwrap()
+    }
+
     pub async fn stop(self) {
         self.root
             .query(&format!("DROP DATABASE {}", self.name))
