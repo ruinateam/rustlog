@@ -39,9 +39,9 @@ pub struct Config {
 impl Config {
     pub fn load(config_path: &Path) -> anyhow::Result<Self> {
         let contents = fs::read_to_string(config_path)
-            .with_context(|| format!("Failed to load config from {}", config_path.display()))?;
+            .with_context(|| format!("failed to load config from {}", config_path.display()))?;
         let mut config: Self =
-            serde_json::from_str(&contents).context("Config deserialization error")?;
+            serde_json::from_str(&contents).context("config deserialization error")?;
 
         if let Ok(value) = env::var("RUSTLOG_CLICKHOUSE_URL") {
             config.clickhouse_url = value;

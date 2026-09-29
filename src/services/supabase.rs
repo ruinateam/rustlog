@@ -78,7 +78,7 @@ pub fn spawn_tier_snapshot(
         Err(_) => {
             warn!(
                 total_users = tiers.total_users,
-                "Skipping tier snapshot: too many users"
+                "skipping tier snapshot: too many users"
             );
             return;
         }
@@ -88,7 +88,7 @@ pub fn spawn_tier_snapshot(
         Err(_) => {
             warn!(
                 total_messages = tiers.total_messages,
-                "Skipping tier snapshot: too many messages"
+                "skipping tier snapshot: too many messages"
             );
             return;
         }
@@ -98,7 +98,7 @@ pub fn spawn_tier_snapshot(
         Err(_) => {
             warn!(
                 total_unique_messages = tiers.total_unique_messages,
-                "Skipping tier snapshot: too many unique messages"
+                "skipping tier snapshot: too many unique messages"
             );
             return;
         }
@@ -108,7 +108,7 @@ pub fn spawn_tier_snapshot(
     let entries_json = match serde_json::to_value(entries) {
         Ok(v) => v,
         Err(e) => {
-            warn!(error = %e, "Skipping tier snapshot: could not serialize the entries");
+            warn!(error = %e, "skipping tier snapshot: could not serialize the entries");
             return;
         }
     };
@@ -129,7 +129,7 @@ pub fn spawn_tier_snapshot(
         if let Err(e) = write_tier_snapshot(cfg, payload).await {
             warn!(
                 error = format!("{e:#}"),
-                "Could not write the tier snapshot to Supabase"
+                "could not write the tier snapshot to Supabase"
             );
         }
     });

@@ -123,9 +123,9 @@ pub async fn get_user_name_history(db: &Client, user_id: &str) -> Result<Vec<Nam
                 Some(NameHistoryEntry {
                     user_login: row.user_login,
                     last_seen: DateTime::from_timestamp_millis(row.last_timestamp)
-                        .expect("Invalid DateTime"),
+                        .expect("invalid DateTime"),
                     first_seen: DateTime::from_timestamp_millis(row.first_timestamp)
-                        .expect("Invalid DateTime"),
+                        .expect("invalid DateTime"),
                 })
             } else {
                 None

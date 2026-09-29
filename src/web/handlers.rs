@@ -586,7 +586,7 @@ pub async fn optout(app: State<App>) -> Json<String> {
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(60)).await;
             if codes.remove(&optout_code).is_some() {
-                debug!(code = %optout_code, "Opt-out code expired");
+                debug!(code = %optout_code, "opt-out code expired");
             }
         });
     }

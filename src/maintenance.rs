@@ -164,7 +164,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
             channel = %channel,
             expected_days = expected_days.len(),
             instances = ?instances,
-            "Found mirrors of channel"
+            "found mirrors of channel"
         );
         expected_by_channel.insert(channel.clone(), expected_days);
         instances_by_channel.insert(channel.clone(), instances);
@@ -176,7 +176,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
     for channel in &options.channels {
         let expected = expected_by_channel
             .get(channel)
-            .ok_or_else(|| anyhow!("Missing expected days for {channel}"))?;
+            .ok_or_else(|| anyhow!("missing expected days for {channel}"))?;
         let local = local_days.remove(channel).unwrap_or_default();
         let missing = expected
             .difference(&local.keys().copied().collect::<BTreeSet<_>>())
@@ -186,7 +186,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
             channel = %channel,
             local_days = local.len(),
             missing_days = missing.len(),
-            "Compared local days with mirrors"
+            "compared local days with mirrors"
         );
         if !missing.is_empty() {
             info!(
@@ -196,7 +196,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(" "),
-                "Missing days"
+                "missing days"
             );
         }
         missing_by_channel.insert(channel.clone(), missing);
@@ -221,10 +221,10 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
     for channel in &options.channels {
         let missing = missing_by_channel
             .get(channel)
-            .ok_or_else(|| anyhow!("Missing work list for {channel}"))?;
+            .ok_or_else(|| anyhow!("missing work list for {channel}"))?;
         let instances = instances_by_channel
             .get(channel)
-            .ok_or_else(|| anyhow!("Missing instances for {channel}"))?;
+            .ok_or_else(|| anyhow!("missing instances for {channel}"))?;
 
         if missing.is_empty() {
             continue;
@@ -246,7 +246,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
                 channel = %channel,
                 days = days.len(),
                 mirror = %base_url,
-                "Filling days from mirror"
+                "filling days from mirror"
             );
 
             let res = crate::mirror::run_days(
@@ -265,7 +265,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
                     channel = %channel,
                     mirror = %base_url,
                     error = format!("{err:#}"),
-                    "Could not fill days from mirror"
+                    "could not fill days from mirror"
                 );
             }
 
@@ -286,12 +286,12 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
                 filled = filled_count,
                 remaining = remaining.len(),
                 mirror = %base_url,
-                "Filled days from mirror"
+                "filled days from mirror"
             );
         }
 
         for date in &remaining {
-            warn!(channel = %channel, %date, "Day is still missing");
+            warn!(channel = %channel, %date, "day is still missing");
             failures.push((channel.clone(), *date));
         }
     }
@@ -314,7 +314,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
     for channel in &options.channels {
         let expected = expected_by_channel
             .get(channel)
-            .ok_or_else(|| anyhow!("Missing expected days for {channel}"))?;
+            .ok_or_else(|| anyhow!("missing expected days for {channel}"))?;
         let local = final_days.get(channel).cloned().unwrap_or_default();
         let missing = expected
             .difference(&local.keys().copied().collect::<BTreeSet<_>>())
@@ -327,7 +327,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
             expected_days = expected.len(),
             rows,
             missing_days = missing.len(),
-            "Channel summary"
+            "channel summary"
         );
         if !missing.is_empty() {
             info!(
@@ -337,7 +337,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(" "),
-                "Days still missing"
+                "days still missing"
             );
         }
     }
@@ -355,7 +355,7 @@ pub async fn cleanup_duplicate_ids(
     let _wait_timeout = options.wait_timeout;
     let summary = duplicate_summary(&db, &options).await?;
     if summary.is_empty() {
-        info!("No duplicate message ids in scope");
+        info!("no duplicate message ids in scope");
         return Ok(());
     }
 
@@ -365,7 +365,7 @@ pub async fn cleanup_duplicate_ids(
             rows = row.rows,
             unique_ids = row.unique_ids,
             duplicate_rows = row.duplicate_rows,
-            "Duplicate message ids"
+            "duplicate message ids"
         );
     }
 
@@ -377,19 +377,19 @@ pub async fn cleanup_duplicate_ids(
             copies = sample.copies,
             first = %sample.first_ts,
             last = %sample.last_ts,
-            "Duplicate message id sample"
+            "duplicate message id sample"
         );
     }
 
     if !options.execute {
-        info!("Dry run: re-run with --execute to remove the duplicates");
+        info!("dry run: re-run with --execute to remove the duplicates");
         return Ok(());
     }
 
     execute_duplicate_cleanup(&db, &options).await?;
     let remaining = duplicate_summary(&db, &options).await?;
     if remaining.is_empty() {
-        info!("Duplicate cleanup finished");
+        info!("duplicate cleanup finished");
         Ok(())
     } else {
         Err(anyhow!(
@@ -420,10 +420,10 @@ async fn find_repair_candidates(
     for channel in &options.channels {
         let expected = expected_by_channel
             .get(channel)
-            .ok_or_else(|| anyhow!("Missing expected days for {channel}"))?;
+            .ok_or_else(|| anyhow!("missing expected days for {channel}"))?;
         let instances = instances_by_channel
             .get(channel)
-            .ok_or_else(|| anyhow!("Missing instances for {channel}"))?;
+            .ok_or_else(|| anyhow!("missing instances for {channel}"))?;
         let local = local_days.get(channel);
 
         for date in expected {
@@ -460,7 +460,7 @@ async fn find_repair_candidates(
         day_concurrency,
         request_concurrency = requested_concurrency,
         deep = options.deep,
-        "Checking existing days for missing messages"
+        "checking existing days for missing messages"
     );
 
     let mut candidates = Vec::new();
@@ -556,7 +556,7 @@ async fn find_repair_candidate_for_day(
             %date,
             failed_checks,
             first_error = first_error.as_deref().unwrap_or("none"),
-            "No readable mirror for day"
+            "no readable mirror for day"
         );
         return Ok(None);
     };
@@ -614,11 +614,11 @@ async fn fetch_remote_day_unique_ids(
 
 fn log_repair_candidates(candidates: &[RepairCandidate]) {
     if candidates.is_empty() {
-        info!("No incomplete days found");
+        info!("no incomplete days found");
         return;
     }
 
-    info!(days = candidates.len(), "Found incomplete days");
+    info!(days = candidates.len(), "found incomplete days");
     for candidate in candidates {
         info!(
             channel = %candidate.channel,
@@ -626,7 +626,7 @@ fn log_repair_candidates(candidates: &[RepairCandidate]) {
             local_unique_ids = candidate.local_unique_ids,
             remote_unique_ids = candidate.remote_unique_ids,
             mirror = %candidate.base_url,
-            "Incomplete day"
+            "incomplete day"
         );
     }
 }
@@ -655,7 +655,7 @@ async fn run_repair_candidates(
             channel = %channel,
             days = days.len(),
             mirror = %base_url,
-            "Repairing days from mirror"
+            "repairing days from mirror"
         );
 
         if let Err(err) = crate::mirror::run_days(
@@ -673,7 +673,7 @@ async fn run_repair_candidates(
                 channel = %channel,
                 mirror = %base_url,
                 error = format!("{err:#}"),
-                "Could not repair days from mirror"
+                "could not repair days from mirror"
             );
             failures.push((channel, base_url));
         }
@@ -713,7 +713,7 @@ async fn read_local_days(
     let mut out = BTreeMap::new();
     for row in rows {
         let day = NaiveDate::parse_from_str(&row.day, "%Y-%m-%d")
-            .with_context(|| format!("Invalid ClickHouse date {}", row.day))?;
+            .with_context(|| format!("invalid ClickHouse date {}", row.day))?;
         out.entry(row.channel_login)
             .or_insert_with(BTreeMap::new)
             .insert(
@@ -787,7 +787,7 @@ async fn execute_duplicate_cleanup(
         ))
         .fetch_one()
         .await?;
-    info!(rows = scope_rows, "Rows in cleanup scope");
+    info!(rows = scope_rows, "rows in cleanup scope");
 
     let new_table = format!(
         "message_structured_dedup_{}_{}",
@@ -800,7 +800,7 @@ async fn execute_duplicate_cleanup(
         chrono::Utc::now().timestamp()
     );
 
-    info!(table = %new_table, "Creating the new table");
+    info!(table = %new_table, "creating the new table");
     db.query(&format!(
         "
         CREATE TABLE {new_table} AS message_structured
@@ -815,7 +815,7 @@ async fn execute_duplicate_cleanup(
     let cleanup_result = async {
         // Step 1: Materialize duplicate IDs into a small temp table (avoids re-evaluating the heavy GROUP BY).
         let dup_table = format!("{}_dup_ids", new_table);
-        info!(table = %dup_table, "Creating the duplicate id table");
+        info!(table = %dup_table, "creating the duplicate id table");
         db.query(&format!(
             "
             CREATE TABLE {dup_table} (channel_login String, id UUID)
@@ -825,7 +825,7 @@ async fn execute_duplicate_cleanup(
         .execute()
         .await?;
 
-        info!("Finding duplicate message ids");
+        info!("finding duplicate message ids");
         db.query(&format!(
             "
             INSERT INTO {dup_table}
@@ -844,7 +844,7 @@ async fn execute_duplicate_cleanup(
             .query(&format!("SELECT count() FROM {dup_table}"))
             .fetch_one()
             .await?;
-        info!(ids = dup_count, "Found duplicate message ids");
+        info!(ids = dup_count, "found duplicate message ids");
 
         // Step 2: Insert month-by-month to stay within memory limits.
         let partitions: Vec<String> = db
@@ -863,7 +863,7 @@ async fn execute_duplicate_cleanup(
 
         let mut non_dup: u64 = 0;
         for partition in &partitions {
-            info!(%partition, "Copying rows without duplicates");
+            info!(%partition, "copying rows without duplicates");
             db.query(&format!(
                 "
                 INSERT INTO {new_table}
@@ -881,13 +881,13 @@ async fn execute_duplicate_cleanup(
                 .await?;
             let batch = n - non_dup;
             non_dup = n;
-            info!(%partition, rows = batch, "Copied rows without duplicates");
+            info!(%partition, rows = batch, "copied rows without duplicates");
         }
-        info!(rows = non_dup, "Copied all rows without duplicates");
+        info!(rows = non_dup, "copied all rows without duplicates");
 
         // Insert one row per duplicate month-by-month.
         for partition in &partitions {
-            info!(%partition, "Copying one row per duplicate id");
+            info!(%partition, "copying one row per duplicate id");
             db.query(&format!(
                 "
                 INSERT INTO {new_table}
@@ -911,17 +911,17 @@ async fn execute_duplicate_cleanup(
         info!(
             rows = total,
             kept_duplicates = dup_rows,
-            "Filled the new table"
+            "filled the new table"
         );
 
-        info!(table = %dup_table, "Dropping the duplicate id table");
+        info!(table = %dup_table, "dropping the duplicate id table");
         let _ = db
             .query(&format!("DROP TABLE IF EXISTS {dup_table}"))
             .execute()
             .await;
 
         // Atomic swap.
-        info!("Swapping the tables");
+        info!("swapping the tables");
         db.query(&format!(
             "
             RENAME TABLE message_structured TO {old_table},
@@ -931,7 +931,7 @@ async fn execute_duplicate_cleanup(
         .execute()
         .await?;
 
-        info!(table = %old_table, "Dropping the old table");
+        info!(table = %old_table, "dropping the old table");
         db.query(&format!("DROP TABLE IF EXISTS {old_table}"))
             .execute()
             .await?;

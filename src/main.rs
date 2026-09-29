@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
 
     setup_db(&db, &config.clickhouse_db, &config)
         .await
-        .context("Could not run DB migrations")?;
+        .context("could not run DB migrations")?;
 
     match args.subcommand {
         None => run(config, db).await,
@@ -167,7 +167,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
     let db = Arc::new(db);
     let state = OperationalState::load(db.clone())
         .await
-        .context("Could not load operational state")?;
+        .context("could not load operational state")?;
 
     let (writer_tx, flush_buffer, mut writer_handle) = create_writer(
         db.clone(),
@@ -180,7 +180,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
 
     let twitch = Twitch::new();
     let sully = SullyGnome::new(SullyGnome::DEFAULT_URL, SullyGnome::DEFAULT_CACHE_DIR)
-        .context("Could not create the SullyGnome client")?;
+        .context("could not create the SullyGnome client")?;
     let app = App {
         twitch: twitch.clone(),
         sully: sully.clone(),
@@ -216,34 +216,34 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
         biased;
 
         _ = shutdown_rx.changed() => {
-            info!("Shutting down");
+            info!("shutting down");
 
             let started_at = Instant::now();
 
             let shutdown_future = try_join_all([bot_handle, web_handle, writer_handle, token_handle]);
             match timeout(Duration::from_secs(SHUTDOWN_TIMEOUT_SECONDS), shutdown_future).await {
                 Ok(Ok(_)) => {
-                    info!(took_ms = started_at.elapsed().as_millis() as u64, "Shut down");
+                    info!(took_ms = started_at.elapsed().as_millis() as u64, "shut down");
                     Ok(())
                 }
-                Ok(Err(err)) => Err(anyhow!("Could not shut down properly: {err}")),
+                Ok(Err(err)) => Err(anyhow!("could not shut down properly: {err}")),
                 Err(_) => {
-                    Err(anyhow!("Tasks did not shut down after {} seconds", SHUTDOWN_TIMEOUT_SECONDS))
+                    Err(anyhow!("tasks did not shut down after {} seconds", SHUTDOWN_TIMEOUT_SECONDS))
                 }
             }
 
         }
         _ = &mut bot_handle => {
-            Err(anyhow!("Bot task exited unexpectedly"))
+            Err(anyhow!("bot task exited unexpectedly"))
         }
         _ = &mut web_handle => {
-            Err(anyhow!("Web task exited unexpectedly"))
+            Err(anyhow!("web task exited unexpectedly"))
         }
         _ = &mut writer_handle => {
-            Err(anyhow!("Writer task exited unexpectedly"))
+            Err(anyhow!("writer task exited unexpectedly"))
         }
         _ = &mut token_handle => {
-            Err(anyhow!("Token refresh task exited unexpectedly"))
+            Err(anyhow!("token refresh task exited unexpectedly"))
         }
     }
 }
@@ -251,7 +251,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
 fn write_openapi(out_dir: &Path) -> anyhow::Result<()> {
     let api = web::api();
     fs::create_dir_all(out_dir)
-        .with_context(|| format!("Could not create {}", out_dir.display()))?;
+        .with_context(|| format!("could not create {}", out_dir.display()))?;
 
     for (name, openapi) in [
         ("legacy.json", api.legacy_openapi),
@@ -260,8 +260,8 @@ fn write_openapi(out_dir: &Path) -> anyhow::Result<()> {
         let path = out_dir.join(name);
         let mut json = serde_json::to_string_pretty(&*openapi)?;
         json.push('\n');
-        fs::write(&path, json).with_context(|| format!("Could not write {}", path.display()))?;
-        info!(path = %path.display(), "Wrote OpenAPI document");
+        fs::write(&path, json).with_context(|| format!("could not write {}", path.display()))?;
+        info!(path = %path.display(), "wrote OpenAPI document");
     }
 
     Ok(())
@@ -294,7 +294,7 @@ async fn listen_shutdown() -> watch::Receiver<()> {
 
     tokio::spawn(async move {
         futures.next().await;
-        info!("Received shutdown signal");
+        info!("received shutdown signal");
         tx.send(()).unwrap();
     });
 
@@ -307,7 +307,7 @@ async fn listen_shutdown() -> watch::Receiver<()> {
 
     tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
-            info!("Received shutdown signal");
+            info!("received shutdown signal");
             let _ = tx.send(());
         }
     });

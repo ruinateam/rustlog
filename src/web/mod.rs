@@ -77,20 +77,20 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
     metrics_prometheus::install();
 
     let listen_address =
-        parse_listen_addr(&app.config.listen_address).expect("Invalid listen address");
+        parse_listen_addr(&app.config.listen_address).expect("invalid listen address");
 
     let app = service(app, bot_tx, shutdown_rx.clone());
 
-    info!(address = %listen_address, "Listening");
+    info!(address = %listen_address, "listening");
 
     let listener = TcpListener::bind(&listen_address)
         .await
-        .expect("Could not create TCP listener");
+        .expect("could not create TCP listener");
 
     axum::serve(listener, ServiceExt::<Request>::into_make_service(app))
         .with_graceful_shutdown(async move {
             shutdown_rx.changed().await.ok();
-            debug!("Shutting down the HTTP server");
+            debug!("shutting down the HTTP server");
         })
         .await
         .unwrap();
@@ -121,7 +121,7 @@ pub fn service(
 /// Builds the routes and generates their OpenAPI documents.
 pub fn api() -> Api {
     aide::generate::on_error(|error| {
-        panic!("Could not generate docs: {error}");
+        panic!("could not generate docs: {error}");
     });
     aide::generate::infer_responses(true);
     aide::generate::extract_schemas(true);

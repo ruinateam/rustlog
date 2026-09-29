@@ -69,7 +69,7 @@ pub async fn read_channel(
 
         debug!(
             queries = streams.len(),
-            "Reading channel logs in several queries"
+            "reading channel logs in several queries"
         );
 
         LogsStream::new_multi_query(streams, buffer_response)

@@ -70,7 +70,7 @@ impl Twitch {
                             warn!(
                                 error = format!("{err:#}"),
                                 retry_in_secs = TOKEN_RETRY_INTERVAL.as_secs(),
-                                "Could not get a Twitch app token"
+                                "could not get a Twitch app token"
                             );
                             TOKEN_RETRY_INTERVAL
                         }
@@ -78,13 +78,13 @@ impl Twitch {
                     tokio::select! {
                         _ = sleep(wait) => {}
                         _ = shutdown_rx.changed() => {
-                            debug!("Shutting down token refresh task");
+                            debug!("shutting down token refresh task");
                             break;
                         }
                     }
                 }
                 _ = shutdown_rx.changed() => {
-                    debug!("Shutting down token refresh task");
+                    debug!("shutting down token refresh task");
                     break;
                 }
             }
@@ -103,7 +103,7 @@ impl Twitch {
             Scope::all(),
         )
         .await?;
-        info!("Got a new Twitch app token");
+        info!("got a new Twitch app token");
 
         Ok(token)
     }
@@ -162,7 +162,7 @@ impl Twitch {
 
         // There are no chunks if the vec is empty, so there is no empty request made
         for chunk in ids_to_request.chunks(100) {
-            debug!(ids = ?chunk, "Requesting Twitch users by id");
+            debug!(ids = ?chunk, "requesting Twitch users by id");
 
             let request = GetUsersRequest::ids(chunk);
             let response = self
@@ -173,7 +173,7 @@ impl Twitch {
         }
 
         for chunk in names_to_request.chunks(100) {
-            debug!(logins = ?chunk, "Requesting Twitch users by login");
+            debug!(logins = ?chunk, "requesting Twitch users by login");
 
             let request = GetUsersRequest::logins(chunk);
             let response = self

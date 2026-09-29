@@ -254,7 +254,7 @@ impl From<Error> for ApiProblem {
                 "The Twitch token is not ready",
             ),
             Error::Helix(_) | Error::Internal | Error::Database(_) => {
-                error!(error = %error_value, "Request failed");
+                error!(error = %error_value, "request failed");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "internal_error",

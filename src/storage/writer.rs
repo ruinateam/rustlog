@@ -46,7 +46,7 @@ impl FlushBuffer {
             .filter(|msg| msg.channel_id == channel_id)
             .cloned()
             .collect::<Vec<_>>();
-        trace!(messages = msgs.len(), "Read messages from the write buffer");
+        trace!(messages = msgs.len(), "read messages from the write buffer");
         msgs
     }
 
@@ -65,7 +65,7 @@ impl FlushBuffer {
             .filter(|msg| msg.channel_id == channel_id && msg.user_id == user_id)
             .cloned()
             .collect::<Vec<_>>();
-        trace!(messages = msgs.len(), "Read messages from the write buffer");
+        trace!(messages = msgs.len(), "read messages from the write buffer");
         msgs
     }
 
@@ -99,7 +99,7 @@ pub async fn create_writer(
                 _ = &mut timeout => {
                     timeout.as_mut().reset(Instant::now() + Duration::from_secs(flush_interval));
                     if let Err(err) = write_chunk_with_retry(&db, &flush_buffer, &state).await {
-                        error!(error = format!("{err:#}"), "Could not write messages");
+                        error!(error = format!("{err:#}"), "could not write messages");
                     }
                 }
                 Some(msg) = rx.recv() => {
@@ -108,10 +108,10 @@ pub async fn create_writer(
                     }
                 }
                 Ok(()) = shutdown_rx.changed() => {
-                    info!("Flushing the write buffer");
+                    info!("flushing the write buffer");
 
                     if let Err(err) = write_chunk_with_retry(&db, &flush_buffer, &state).await {
-                        error!(error = format!("{err:#}"), "Could not flush the write buffer");
+                        error!(error = format!("{err:#}"), "could not flush the write buffer");
                     }
 
                     break;
@@ -132,7 +132,7 @@ async fn write_chunk_with_retry(
         match write_chunk(db, buffer, state).await {
             Ok(()) => {
                 if attempt > 1 {
-                    debug!(attempt, "Insert succeeded after retrying");
+                    debug!(attempt, "insert succeeded after retrying");
                 }
                 return Ok(());
             }
@@ -142,7 +142,7 @@ async fn write_chunk_with_retry(
                     max_attempts = RETRY_COUNT,
                     retry_in_secs = RETRY_INTERVAL_SECONDS,
                     error = format!("{err:#}"),
-                    "Could not insert messages"
+                    "could not insert messages"
                 );
                 sleep(Duration::from_secs(RETRY_INTERVAL_SECONDS)).await;
             }
@@ -178,16 +178,16 @@ async fn write_chunk(
         .insert::<StructuredMessage<'static>>(MESSAGES_STRUCTURED_TABLE)
         .await?;
     for message in &messages {
-        insert.write(message).await.context("Could not write row")?;
+        insert.write(message).await.context("could not write row")?;
     }
 
     let mut messages_write_guard = buffer.messages.write().await;
-    insert.end().await.context("Could not end insert")?;
+    insert.end().await.context("could not end insert")?;
 
     debug!(
         messages = messages.len(),
         took_ms = started_at.elapsed().as_millis() as u64,
-        "Inserted messages"
+        "inserted messages"
     );
     BATCH_MESSAGE_COUNT_GAUGE.set(messages.len().try_into().unwrap());
     messages_write_guard.clear();

@@ -10,7 +10,7 @@ impl<'a> Migratable<'a> for UsernameHistoryMigration {
             .query("SELECT DISTINCT toYYYYMM(timestamp) as partition FROM message_structured ORDER BY partition ASC")
             .fetch_all::<u32>()
             .await
-            .context("Could not fetch partition list")?;
+            .context("could not fetch partition list")?;
 
         db.query(
             "
@@ -28,10 +28,10 @@ impl<'a> Migratable<'a> for UsernameHistoryMigration {
         .execute()
         .await?;
 
-        info!(partitions = partitions.len(), "Filling username history");
+        info!(partitions = partitions.len(), "filling username history");
 
         for partition in partitions {
-            info!(%partition, "Filling username history for partition");
+            info!(%partition, "filling username history for partition");
             db.query(
                 "
                 INSERT INTO username_history
@@ -48,7 +48,7 @@ impl<'a> Migratable<'a> for UsernameHistoryMigration {
             .bind(partition)
             .execute()
             .await
-            .context("Could not fill username history")?;
+            .context("could not fill username history")?;
         }
 
         db.query(
@@ -68,10 +68,10 @@ impl<'a> Migratable<'a> for UsernameHistoryMigration {
         .await?;
 
         if let Err(err) = db.query("OPTIMIZE TABLE username_history").execute().await {
-            warn!(error = %err, "Could not optimize the username history table");
+            warn!(error = %err, "could not optimize the username history table");
         }
 
-        info!("Filled username history");
+        info!("filled username history");
 
         Ok(())
     }

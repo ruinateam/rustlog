@@ -75,8 +75,8 @@ fn default_max_files() -> usize {
 /// the program exits.
 pub fn init(config: &LoggingConfig) -> anyhow::Result<Option<WorkerGuard>> {
     let filter = match env::var("RUST_LOG") {
-        Ok(filter) => EnvFilter::try_new(&filter).context("Invalid RUST_LOG filter")?,
-        Err(_) => EnvFilter::try_new(&config.filter).context("Invalid logging filter")?,
+        Ok(filter) => EnvFilter::try_new(&filter).context("invalid RUST_LOG filter")?,
+        Err(_) => EnvFilter::try_new(&config.filter).context("invalid logging filter")?,
     };
 
     let mut outputs = vec![format_layer(config.format, io::stdout, use_colors())];
@@ -111,7 +111,7 @@ pub fn init(config: &LoggingConfig) -> anyhow::Result<Option<WorkerGuard>> {
         .with(outputs)
         .with(filter)
         .try_init()
-        .context("Could not install the logger")?;
+        .context("could not install the logger")?;
 
     std::panic::set_hook(Box::new(tracing_panic::panic_hook));
 

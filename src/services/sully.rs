@@ -101,7 +101,7 @@ impl SullyGnome {
             Err(error) => Err(error),
         };
         if let Err(error) = &result {
-            warn!(channel, year, %error, "Could not fetch streams from SullyGnome");
+            warn!(channel, year, %error, "could not fetch streams from SullyGnome");
         }
         result
     }
@@ -126,11 +126,11 @@ impl SullyGnome {
                 channel,
                 year,
                 streams = list.streams.len(),
-                "Using cached SullyGnome streams"
+                "using cached SullyGnome streams"
             ),
             None => warn!(
                 channel,
-                year, "No cached SullyGnome streams to fall back to"
+                year, "no cached SullyGnome streams to fall back to"
             ),
         }
         cached
@@ -151,7 +151,7 @@ impl SullyGnome {
             .and_then(|()| Ok(serde_json::to_string_pretty(list)?))
             .and_then(|data| fs::write(&path, data));
         if let Err(error) = written {
-            warn!(path = %path.display(), %error, "Could not write the SullyGnome cache");
+            warn!(path = %path.display(), %error, "could not write the SullyGnome cache");
         }
     }
 
@@ -167,11 +167,11 @@ impl SullyGnome {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         if !status.is_success() {
-            debug!(%url, %status, body = snippet(&body), "Unexpected SullyGnome response");
+            debug!(%url, %status, body = snippet(&body), "unexpected SullyGnome response");
             return Err(Error::Status(status));
         }
         let items: Vec<SearchItem> = serde_json::from_str(&body).inspect_err(
-            |_| debug!(%url, body = snippet(&body), "Unparsable SullyGnome response"),
+            |_| debug!(%url, body = snippet(&body), "unparsable SullyGnome response"),
         )?;
         let id = items
             .into_iter()
@@ -195,11 +195,11 @@ impl SullyGnome {
             let status = resp_raw.status();
             let body = resp_raw.text().await.unwrap_or_default();
             if !status.is_success() {
-                debug!(%url, %status, body = snippet(&body), "Unexpected SullyGnome response");
+                debug!(%url, %status, body = snippet(&body), "unexpected SullyGnome response");
                 return Err(Error::Status(status));
             }
             let parsed = parse_body("", year, &body).inspect_err(
-                |_| debug!(%url, body = snippet(&body), "Unparsable SullyGnome response"),
+                |_| debug!(%url, body = snippet(&body), "unparsable SullyGnome response"),
             )?;
             let total = parsed.total;
             let count_added = parsed.streams.len() as u32;

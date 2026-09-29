@@ -32,9 +32,9 @@ pub fn on_response(response: &Response, latency: Duration, _span: &Span) {
     let latency_ms = latency.as_millis() as u64;
 
     if status.is_server_error() {
-        error!(status = status.as_u16(), latency_ms, "Request failed");
+        error!(status = status.as_u16(), latency_ms, "request failed");
     } else {
-        info!(status = status.as_u16(), latency_ms, "Request finished");
+        info!(status = status.as_u16(), latency_ms, "request finished");
     }
 }
 
@@ -44,7 +44,7 @@ pub fn on_failure(failure: ServerErrorsFailureClass, latency: Duration, _span: &
     if let ServerErrorsFailureClass::Error(error) = failure {
         error!(
             latency_ms = latency.as_millis() as u64,
-            error, "Request failed while streaming the response"
+            error, "request failed while streaming the response"
         );
     }
 }

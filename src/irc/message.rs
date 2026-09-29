@@ -9,7 +9,7 @@ use uuid::Uuid;
 impl<'a> StructuredMessage<'a> {
     pub fn from_unstructured(message: &'a UnstructuredMessage<'a>) -> anyhow::Result<Self> {
         let irc_message = IrcMessageRef::parse(message.raw.trim().trim_matches('\0'))
-            .context("Could not parse message")?;
+            .context("could not parse message")?;
 
         let channel_login = irc_message
             .channel()
@@ -22,7 +22,7 @@ impl<'a> StructuredMessage<'a> {
             .unwrap_or_default();
 
         let message_type = MessageType::from_tmi_command(irc_message.command())
-            .with_context(|| format!("Unknown message type {}", irc_message.command()))?;
+            .with_context(|| format!("unknown message type {}", irc_message.command()))?;
 
         let mut text = irc_message
             .params()
@@ -514,7 +514,7 @@ mod tests {
                 .iter()
                 .find(|(tag, _)| *tag == original_tag)
                 .map(|(_, value)| value)
-                .unwrap_or_else(|| panic!("Could not find tag {}", original_tag));
+                .unwrap_or_else(|| panic!("could not find tag {}", original_tag));
             assert_eq!(original_value, value);
         }
     }
@@ -534,7 +534,7 @@ mod tests {
 
             let value = converted
                 .tag(original_tag.clone())
-                .unwrap_or_else(|| panic!("Could not find tag {}", original_tag));
+                .unwrap_or_else(|| panic!("could not find tag {}", original_tag));
             println!("Comparing tag {original_tag}");
             assert_eq!(original_value, value);
         }

@@ -32,9 +32,9 @@ impl App {
         self.flush_buffer.remove_user(user_id).await;
         delete_user_logs(&self.db, user_id)
             .await
-            .context("Could not delete logs")?;
+            .context("could not delete logs")?;
 
-        info!(user_id, "User opted out");
+        info!(user_id, "user opted out");
 
         Ok(())
     }

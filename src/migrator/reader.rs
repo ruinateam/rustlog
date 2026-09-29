@@ -49,10 +49,10 @@ impl LogsReader {
     }
 
     pub fn get_available_channel_logs(&self, channel_id: &str) -> Result<(ChannelLogDateMap, u64)> {
-        info!(channel_id, "Listing the logs of channel");
+        info!(channel_id, "listing the logs of channel");
         let channel_path = self.root_path.join(channel_id);
         if !channel_path.exists() {
-            bail!("No logs folder for channel {channel_id}");
+            bail!("no logs folder for channel {channel_id}");
         }
 
         let channel_dir = read_dir(channel_path)?;

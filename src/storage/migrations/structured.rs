@@ -66,7 +66,7 @@ ORDER BY (channel_id, user_id, timestamp)
             .bind(self.db_name)
             .fetch_all::<String>()
             .await
-            .context("Could not fetch partition list")?;
+            .context("could not fetch partition list")?;
 
         if partitions.len() > 1
             && env::var("RUSTLOG_ACKNOWLEDGE_STRUCTURE_MIGRATION").as_deref() != Ok("1")
@@ -80,7 +80,7 @@ ORDER BY (channel_id, user_id, timestamp)
 
         info!(
             partitions = partitions.len(),
-            "Migrating messages to the structured table"
+            "migrating messages to the structured table"
         );
 
         let i = Arc::new(AtomicU64::new(1));
@@ -111,14 +111,14 @@ ORDER BY (channel_id, user_id, timestamp)
         info!(
             messages = i.load(Ordering::SeqCst),
             took_secs = started_at.elapsed().as_secs(),
-            "Migrated messages to the structured table"
+            "migrated messages to the structured table"
         );
 
-        info!("Dropping the old message table");
+        info!("dropping the old message table");
         if let Err(err) = db.query("DROP TABLE message").execute().await {
             error!(
                 error = %err,
-                "Could not drop the old message table; drop it manually with `DROP TABLE message` to free the space"
+                "could not drop the old message table; drop it manually with `DROP TABLE message` to free the space"
             );
         }
 
@@ -131,7 +131,7 @@ async fn migrate_partition(
     db: &clickhouse::Client,
     i: Arc<AtomicU64>,
 ) -> anyhow::Result<()> {
-    info!(%partition, "Migrating partition");
+    info!(%partition, "migrating partition");
 
     let mut inserter = db
         .inserter::<StructuredMessage<'static>>(MESSAGES_STRUCTURED_TABLE)
@@ -146,7 +146,7 @@ async fn migrate_partition(
         .query("SELECT * FROM message WHERE toYYYYMM(timestamp) = ?")
         .bind(&partition)
         .fetch::<UnstructuredMessage>()
-        .with_context(|| format!("Could not fetch messages for partition {partition}"))?;
+        .with_context(|| format!("could not fetch messages for partition {partition}"))?;
 
     while let Some(unstructured_msg) = cursor.next().await? {
         match StructuredMessage::from_unstructured(&unstructured_msg) {
@@ -158,19 +158,19 @@ async fn migrate_partition(
                 let stats = inserter
                     .commit()
                     .await
-                    .with_context(|| format!("Could not commit batch for partition {partition}"))?;
+                    .with_context(|| format!("could not commit batch for partition {partition}"))?;
                 if stats.rows > 0 {
-                    info!(%partition, messages = stats.rows, "Inserted messages from partition");
+                    info!(%partition, messages = stats.rows, "inserted messages from partition");
                 }
 
                 i.fetch_add(1, Ordering::Relaxed);
                 let value = i.load(Ordering::Relaxed);
                 if value.is_multiple_of(1_000_000) {
-                    info!(messages = value, "Migration progress");
+                    info!(messages = value, "migration progress");
                 }
             }
             Err(err) => {
-                error!(raw = %unstructured_msg.raw, error = format!("{err:#}"), "Could not parse a stored IRC message");
+                error!(raw = %unstructured_msg.raw, error = format!("{err:#}"), "could not parse a stored IRC message");
             }
         }
     }
@@ -178,8 +178,8 @@ async fn migrate_partition(
     inserter
         .end()
         .await
-        .with_context(|| format!("Could not finalize migration for partition {partition}"))?;
-    info!(%partition, "Migrated partition");
+        .with_context(|| format!("could not finalize migration for partition {partition}"))?;
+    info!(%partition, "migrated partition");
 
     Ok(())
 }

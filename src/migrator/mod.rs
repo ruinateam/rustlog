@@ -65,11 +65,11 @@ impl Migrator {
             .filter(|channel| self.channel_ids.is_empty() || self.channel_ids.contains(channel))
             .collect();
 
-        info!(channels = ?filtered_channels, "Migrating channels");
+        info!(channels = ?filtered_channels, "migrating channels");
 
         let mut channel_logs: IndexMap<String, ChannelLogDateMap> = IndexMap::new();
 
-        info!("Scanning the logs to migrate");
+        info!("scanning the logs to migrate");
 
         let mut total_bytes = 0;
 
@@ -86,18 +86,18 @@ impl Migrator {
         info!(
             channels = channel_count,
             size_mib = total_mb,
-            "Migrating logs; progress estimates are wrong for gzip compressed logs"
+            "migrating logs; progress estimates are wrong for gzip compressed logs"
         );
 
         let total_read_bytes = Arc::new(AtomicU64::new(0));
         let migrated_percentage = Arc::new(AtomicU64::new(0));
 
         for (i, (channel_id, available_logs)) in (1..).zip(channel_logs) {
-            info!(%channel_id, channel = i, channels = channel_count, "Reading channel");
+            info!(%channel_id, channel = i, channels = channel_count, "reading channel");
 
             for (year, months) in available_logs {
                 for (month, days) in months {
-                    debug!("Waiting for a free job slot");
+                    debug!("waiting for a free job slot");
                     let permit = semaphore.clone().acquire_owned().await.unwrap();
                     let migrator = self.clone();
                     let channel_id = channel_id.clone();
@@ -116,7 +116,7 @@ impl Migrator {
                             .with_max_rows(INSERT_BATCH_SIZE)
                             .with_period(Some(Duration::from_secs(15)));
 
-                        info!(%channel_id, year, month, "Migrating month");
+                        info!(%channel_id, year, month, "migrating month");
 
                         for day in days {
                             let date = Utc
@@ -142,19 +142,19 @@ impl Migrator {
                                     processed_mib = processed_mb,
                                     total_mib = total_mb,
                                     percent = new_percentage,
-                                    "Migration progress estimate"
+                                    "migration progress estimate"
                                 );
                                 migrated_percentage.store(new_percentage, Ordering::SeqCst);
                             }
                         }
 
-                        debug!("Flushing inserts");
-                        let stats = inserter.end().await.context("Could not flush messages")?;
+                        debug!("flushing inserts");
+                        let stats = inserter.end().await.context("could not flush messages")?;
                         if stats.rows > 0 {
                             info!(
                                 rows = stats.rows,
                                 transactions = stats.transactions,
-                                "Inserted messages"
+                                "inserted messages"
                             );
                         }
 
@@ -171,12 +171,12 @@ impl Migrator {
         }
 
         let elapsed = started_at.elapsed();
-        info!(took_secs = elapsed.as_secs(), "Migration finished");
+        info!(took_secs = elapsed.as_secs(), "migration finished");
 
         if let Some(throughput) =
             (total_read_bytes.load(Ordering::SeqCst) / 1024 / 1024).checked_div(elapsed.as_secs())
         {
-            info!(mib_per_sec = throughput, "Average migration speed");
+            info!(mib_per_sec = throughput, "average migration speed");
         }
 
         Ok(())
@@ -196,19 +196,19 @@ impl Migrator {
         let uncompressed_file_path = day_path.join(UNCOMPRESSED_CHANNEL_FILE);
 
         if compressed_file_path.exists() {
-            debug!(path = %compressed_file_path.display(), "Reading compressed log");
+            debug!(path = %compressed_file_path.display(), "reading compressed log");
             let file_reader = BufReader::new(File::open(&compressed_file_path)?);
             let gz = BufReader::new(GzDecoder::new(file_reader));
 
             self.migrate_reader(gz, date, channel_id, inserter).await
         } else if uncompressed_file_path.exists() {
-            debug!(path = %uncompressed_file_path.display(), "Reading uncompressed log");
+            debug!(path = %uncompressed_file_path.display(), "reading uncompressed log");
             let file_reader = BufReader::new(File::open(&uncompressed_file_path)?);
 
             self.migrate_reader(file_reader, date, channel_id, inserter)
                 .await
         } else {
-            Err(anyhow!("File does not exist"))
+            Err(anyhow!("file does not exist"))
         }
     }
 
@@ -222,11 +222,11 @@ impl Migrator {
         let mut read_bytes = 0;
 
         for (i, line) in reader.lines().enumerate() {
-            let line = line.with_context(|| format!("Could not read line {i} from input"))?;
+            let line = line.with_context(|| format!("could not read line {i} from input"))?;
             read_bytes += line.len() + 1; // Add 1 byte for newline symbol
             write_line(&self.state, channel_id, line, inserter, datetime)
                 .await
-                .with_context(|| format!("Could not write line {i} to inserter"))?;
+                .with_context(|| format!("could not write line {i} to inserter"))?;
         }
 
         let stats = inserter.commit().await?;
@@ -234,7 +234,7 @@ impl Migrator {
             info!(
                 rows = stats.rows,
                 transactions = stats.transactions,
-                "Inserted messages"
+                "inserted messages"
             );
         }
 
@@ -257,7 +257,7 @@ async fn write_line(
                 if irc_message.command() == Command::Privmsg {
                     warn!(
                         raw = irc_message.raw(),
-                        "Skipping PRIVMSG without a user id"
+                        "skipping PRIVMSG without a user id"
                     );
                 }
                 ""
@@ -276,12 +276,12 @@ async fn write_line(
                     }
                 }
                 Err(err) => {
-                    error!(raw = %unstructured.raw, error = format!("{err:#}"), "Could not parse an IRC message");
+                    error!(raw = %unstructured.raw, error = format!("{err:#}"), "could not parse an IRC message");
                 }
             }
         }
         None => {
-            warn!(raw = %raw, "Skipping unparsable line");
+            warn!(raw = %raw, "skipping unparsable line");
         }
     }
 

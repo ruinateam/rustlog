@@ -43,7 +43,7 @@ static MESSAGES_RECEIVED_COUNTERS: LazyLock<IntCounterVec> = LazyLock::new(|| {
 static FIREHOSE_MESSAGES_PUBLISHED: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(
         "rustlog_firehose_messages_published_total",
-        "Messages accepted by the live firehose after the writer queue accepted them"
+        "Messages accepted by the live Firehose after the writer queue accepted them"
     )
     .unwrap()
 });
@@ -93,17 +93,17 @@ impl Bot {
                     .await
                 {
                     Ok(users) => {
-                        info!(count = users.len(), "Joining channels");
+                        info!(count = users.len(), "joining channels");
                         for channel_login in users.into_values() {
-                            debug!(channel = %channel_login, "Logging channel");
+                            debug!(channel = %channel_login, "logging channel");
                             join_client
                                 .join(channel_login)
-                                .expect("Failed to join channel");
+                                .expect("failed to join channel");
                         }
                         CHANNEL_REJOIN_INTERVAL_SECONDS
                     }
                     Err(err) => {
-                        error!(error = %err, "Could not resolve the logged channels");
+                        error!(error = %err, "could not resolve the logged channels");
                         CHANENLS_REFETCH_RETRY_INTERVAL_SECONDS
                     }
                 };
@@ -125,7 +125,7 @@ impl Bot {
                             )
                             .await
                         {
-                            error!(error = format!("{err:#}"), "Could not join channels");
+                            error!(error = format!("{err:#}"), "could not join channels");
                         }
                     }
                     BotMessage::PartChannels(channels) => {
@@ -137,7 +137,7 @@ impl Bot {
                             )
                             .await
                         {
-                            error!(error = format!("{err:#}"), "Could not leave channels");
+                            error!(error = format!("{err:#}"), "could not leave channels");
                         }
                     }
                 }
@@ -148,11 +148,11 @@ impl Bot {
             tokio::select! {
                 Some(msg) = receiver.recv() => {
                     if let Err(e) = self.handle_message(msg, &client).await {
-                        error!(error = format!("{e:#}"), "Could not handle an IRC message");
+                        error!(error = format!("{e:#}"), "could not handle an IRC message");
                     }
                 }
                 _ = shutdown_rx.changed() => {
-                    debug!("Shutting down the bot");
+                    debug!("shutting down the bot");
                     break;
                 }
             }
@@ -165,11 +165,11 @@ impl Bot {
         client: &TwitchClient<C>,
     ) -> anyhow::Result<()> {
         if let ServerMessage::Privmsg(privmsg) = &msg {
-            trace!(text = %privmsg.message_text, "Processing message");
+            trace!(text = %privmsg.message_text, "processing message");
             if let Some(cmd) = privmsg.message_text.strip_prefix(COMMAND_PREFIX)
                 && let Err(err) = self.handle_command(cmd, client, &privmsg.sender.id).await
             {
-                warn!(command = %cmd, error = format!("{err:#}"), "Could not handle chat command");
+                warn!(command = %cmd, error = format!("{err:#}"), "could not handle chat command");
             }
         }
 
@@ -188,7 +188,7 @@ impl Bot {
         {
             Ok(())
         } else {
-            Err(anyhow!("User {user_id} is not an admin"))
+            Err(anyhow!("user {user_id} is not an admin"))
         }
     }
 
@@ -231,7 +231,7 @@ impl Bot {
                     }
                 }
                 Err(err) => {
-                    error!(raw = %unstructured.raw, error = %err, "Could not parse an IRC message");
+                    error!(raw = %unstructured.raw, error = %err, "could not parse an IRC message");
                 }
             }
         }
@@ -245,7 +245,7 @@ impl Bot {
         client: &TwitchClient<C>,
         sender_id: &str,
     ) -> anyhow::Result<()> {
-        debug!(command = %cmd, "Processing chat command");
+        debug!(command = %cmd, "processing chat command");
         let mut split = cmd.split_whitespace();
         if let Some(action) = split.next() {
             let args: Vec<&str> = split.collect();
@@ -272,7 +272,7 @@ impl Bot {
     }
 
     async fn optout_user(&self, args: &[&str], sender_id: &str) -> anyhow::Result<()> {
-        let arg = args.first().context("No optout code provided")?;
+        let arg = args.first().context("no optout code provided")?;
         if self.app.optout_codes.remove(*arg).is_some() {
             self.app.optout_user(sender_id).await?;
 
@@ -284,7 +284,7 @@ impl Bot {
 
             Ok(())
         } else {
-            Err(anyhow!("Invalid optout code"))
+            Err(anyhow!("invalid optout code"))
         }
     }
 
@@ -311,12 +311,12 @@ impl Bot {
         for (channel_id, channel_name) in channels {
             match action {
                 ChannelAction::Join => {
-                    info!(channel = %channel_name, "Joining channel");
+                    info!(channel = %channel_name, "joining channel");
                     self.app.state.enable_channel(&channel_id).await?;
                     client.join(channel_name)?;
                 }
                 ChannelAction::Part => {
-                    info!(channel = %channel_name, "Leaving channel");
+                    info!(channel = %channel_name, "leaving channel");
                     self.app.state.disable_channel(&channel_id).await?;
                     client.part(channel_name);
                 }

@@ -24,7 +24,7 @@ impl<'a> ResponseMessage<'a> for BasicMessage<'a> {
             text: msg.user_friendly_text(),
             display_name: msg.display_name(),
             timestamp: chrono::DateTime::from_timestamp_millis(msg.timestamp.try_into()?)
-                .context("Invalid timestamp")?,
+                .context("invalid timestamp")?,
             id: Cow::Owned(msg.id().unwrap_or_default()),
             tags: msg
                 .all_tags(false)

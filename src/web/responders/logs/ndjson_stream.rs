@@ -41,7 +41,7 @@ impl Stream for NdJsonLogsStream {
                         .filter_map(|msg| match BasicMessage::from_structured(msg) {
                             Ok(parsed) => Some(parsed),
                             Err(err) => {
-                                error!(message_id = %msg.id, error = format!("{err:#}"), "Could not render a stored message");
+                                error!(message_id = %msg.id, error = format!("{err:#}"), "could not render a stored message");
                                 None
                             }
                         })

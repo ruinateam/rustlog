@@ -148,7 +148,7 @@ impl MirrorHttp {
             slots = slots.len(),
             rps_per_slot = rps,
             total_rps = rps * slots.len() as f64,
-            "Created HTTP pool"
+            "created HTTP pool"
         );
 
         Ok(Self {
@@ -188,7 +188,7 @@ impl MirrorHttp {
                             attempt = attempt + 1,
                             max_attempts = FETCH_RETRIES,
                             retry_in_ms = delay.as_millis() as u64,
-                            "Rate limited, backing off"
+                            "rate limited, backing off"
                         );
                         slot.limiter.penalize(delay).await;
                         tokio::time::sleep(delay).await;
@@ -415,7 +415,7 @@ pub async fn run(db: Client, options: MirrorOptions) -> anyhow::Result<()> {
         .collect();
 
     tasks.sort();
-    info!(days = tasks.len(), "Found days to mirror");
+    info!(days = tasks.len(), "found days to mirror");
 
     if tasks.is_empty() {
         return Ok(());
@@ -453,15 +453,15 @@ pub async fn run_days(
     info!(
         from_ms = global_start_ms,
         to_ms = global_end_ms,
-        "Mirroring time range"
+        "mirroring time range"
     );
     let channel_id = resolve_channel_id(&db, channel).await?;
-    info!(channel_id = ?channel_id, "Resolved channel id");
+    info!(channel_id = ?channel_id, "resolved channel id");
 
     let seen_ids: Arc<DashSet<Uuid>> = Arc::new(DashSet::new());
     if let Some(ref cid) = channel_id {
         let existing = fetch_existing_ids(&db, cid, global_start_ms, global_end_ms).await?;
-        info!(ids = existing.len(), "Loaded existing message ids");
+        info!(ids = existing.len(), "loaded existing message ids");
         for id in existing {
             seen_ids.insert(id);
         }
@@ -473,7 +473,7 @@ pub async fn run_days(
     let writer_state = state.clone();
     let insert_max_rows = options.insert_max_rows;
     let writer_handle = tokio::spawn(async move {
-        debug!("Writer started");
+        debug!("writer started");
         let mut insert = match db_writer
             .insert::<StructuredMessage<'static>>(MESSAGES_STRUCTURED_TABLE)
             .await
@@ -481,11 +481,11 @@ pub async fn run_days(
         {
             Ok(i) => i,
             Err(e) => {
-                error!(error = %e, "Could not open an insert");
+                error!(error = %e, "could not open an insert");
                 return Err(e);
             }
         };
-        debug!("Opened insert");
+        debug!("opened insert");
 
         let mut written: u64 = 0;
         let mut first_msg = true;
@@ -496,22 +496,22 @@ pub async fn run_days(
             }
 
             if first_msg {
-                debug!("Writer received its first message");
+                debug!("writer received its first message");
                 first_msg = false;
             }
             if let Err(e) = insert.write(&msg).await {
-                error!(rows = written, error = %e, "Could not write a row");
+                error!(rows = written, error = %e, "could not write a row");
                 return Err(e.into());
             }
             written += 1;
 
             if written.is_multiple_of(insert_max_rows) {
-                info!(rows = written, "Flushing insert");
+                info!(rows = written, "flushing insert");
                 if let Err(e) = insert.end().await {
-                    error!(rows = written, error = %e, "Could not finish an insert");
+                    error!(rows = written, error = %e, "could not finish an insert");
                     return Err(e.into());
                 }
-                debug!("Flushed insert, opening the next one");
+                debug!("flushed insert, opening the next one");
                 insert = match db_writer
                     .insert::<StructuredMessage<'static>>(MESSAGES_STRUCTURED_TABLE)
                     .await
@@ -519,19 +519,19 @@ pub async fn run_days(
                 {
                     Ok(i) => i,
                     Err(e) => {
-                        error!(rows = written, error = %e, "Could not open the next insert");
+                        error!(rows = written, error = %e, "could not open the next insert");
                         return Err(e);
                     }
                 };
             }
         }
 
-        info!(rows = written, "Flushing the final insert");
+        info!(rows = written, "flushing the final insert");
         if let Err(e) = insert.end().await {
-            error!(rows = written, error = %e, "Could not finish the final insert");
+            error!(rows = written, error = %e, "could not finish the final insert");
             return Err(e.into());
         }
-        info!(rows = written, "Writer finished");
+        info!(rows = written, "writer finished");
         anyhow::Result::<(), anyhow::Error>::Ok(())
     });
 
@@ -584,7 +584,7 @@ pub async fn run_days(
                     skipped_without_id = stats.skipped_no_id,
                     skipped_opted_out = stats.skipped_optout,
                     took_ms = elapsed.as_millis() as u64,
-                    "Mirrored day"
+                    "mirrored day"
                 ),
                 Err(err) => {
                     warn!(
@@ -592,7 +592,7 @@ pub async fn run_days(
                         days = total,
                         date = format!("{y:04}-{m:02}-{d:02}"),
                         error = format!("{err:#}"),
-                        "Could not mirror day"
+                        "could not mirror day"
                     );
                     failed.push((y, m, d));
                 }
@@ -601,7 +601,7 @@ pub async fn run_days(
     }
 
     if !failed.is_empty() {
-        info!(days = failed.len(), "Retrying failed days");
+        info!(days = failed.len(), "retrying failed days");
         {
             let tx_retry = tx.clone();
             let state_retry = state.clone();
@@ -646,14 +646,14 @@ pub async fn run_days(
                         skipped_without_id = stats.skipped_no_id,
                         skipped_opted_out = stats.skipped_optout,
                         took_ms = elapsed.as_millis() as u64,
-                        "Mirrored day on retry"
+                        "mirrored day on retry"
                     ),
                     Err(err) => warn!(
                         day = idx + 1,
                         days = total,
                         date = format!("{y:04}-{m:02}-{d:02}"),
                         error = format!("{err:#}"),
-                        "Could not mirror day on retry"
+                        "could not mirror day on retry"
                     ),
                 }
             }
