@@ -112,7 +112,9 @@ Every endpoint that returns messages takes `format`:
 | `raw` | `text/plain; charset=utf-8` | raw IRC lines |
 
 Lists of messages also take `reverse=true` (newest first), `limit` (at least
-1) and `offset` (messages to skip).
+1) and `offset` (messages to skip). A list without messages is empty in its
+format (`{ "messages": [] }` for JSON), not an error; a random message of a
+channel or user without messages is `404`.
 
 To follow live chat, remember the timestamp and id of the latest message,
 replay this endpoint after reconnecting, and drop the messages seen already:
@@ -145,10 +147,13 @@ the table; `excludeBots=` alone leaves out none.
       "login": "alice",
       "messages": 3,
       "uniqueMessages": 3,
-      "tierScore": 12,
+      "tierScore": 50,
       "windows": {
-        "1m": { "active": 3, "rank": 1, "tier": "S" },
-        "5m": { "active": 3 }
+        "1m": { "active": 3, "rank": 1, "tier": "HT1" },
+        "5m": { "active": 3, "rank": 1, "tier": "HT1" },
+        "15m": { "active": 2, "rank": 1, "tier": "HT1" },
+        "30m": { "active": 2, "rank": 1, "tier": "HT1" },
+        "60m": { "active": 1 }
       }
     }
   ]
@@ -156,23 +161,45 @@ the table; `excludeBots=` alone leaves out none.
 ```
 
 `windows` has the numbers of active 1, 5, 15, 30 and 60 minute windows, with
-the rank and tier within each size where the user is ranked. Up to 500
-entries are returned.
+the rank and tier within each size where the user is ranked. Tiers go from
+`HT1` (high tier 1, the best) through `LT1`, `HT2` and so on to `LT5`. Up to
+500 entries are returned.
 
 ### Opt-out
 
-`POST /opt-out-codes` answers `201` with `{ "code", "expiresAt" }`. Writing
-`!rustlog optout <code>` in the chat of a logged channel before the code
-expires, a minute later, opts the sender out.
+Users and channels opt out of logging, and back in, with a chat command. It
+needs no account on this side: Twitch vouches for who sent the message.
+
+1. `POST /opt-out-codes` answers `201` with `{ "code", "expiresAt" }`: a
+   one-time code, valid for a minute.
+2. The command with the code is written in a Twitch chat:
+
+| Command | Where | Effect |
+| --- | --- | --- |
+| `!rustlog optout <code>` | any logged chat | Stops logging the sender and deletes their messages and logins in every channel. |
+| `!rustlog optin <code>` | any logged chat | Logs the sender again from now on; deleted messages stay deleted. |
+| `!rustlog optout-channel <code>` | the channel's own chat, by its broadcaster | Stops logging the channel and hides its logs, which are kept. |
+| `!rustlog optin-channel <code>` | the channel's own chat, by its broadcaster | Logs the channel again and shows its logs, old ones included. |
+
+The bot stays in the chat of a channel that opted out, so that its
+broadcaster can opt back in there; the channel is left out of
+`GET /channels`. Admins (the `admins` of the config) can write any of the
+commands with a login instead of a code to act for that user or channel,
+and the admin API below does the same.
 
 ### Admin
 
-Admin requests need the `X-Api-Key` header; never put the key in a URL.
+Admin requests need the `X-Api-Key` header; never put the key in a URL. A
+missing or wrong key is answered with `401`.
 
-| Request | Effect |
+| Request | Effect (`204`) |
 | --- | --- |
-| `PUT /admin/channels/{channelId}` | Start logging the channel (`204`). |
-| `DELETE /admin/channels/{channelId}` | Stop logging the channel (`204`). |
+| `PUT /admin/channels/{channelId}` | Start logging the channel. |
+| `DELETE /admin/channels/{channelId}` | Stop logging the channel; its logs stay visible. |
+| `PUT /admin/channels/{channelId}/opt-out` | Opt the channel out: stop logging it and hide its logs. |
+| `DELETE /admin/channels/{channelId}/opt-out` | Opt the channel back in. |
+| `PUT /admin/users/{userId}/opt-out` | Opt the user out: stop logging them and delete their messages. |
+| `DELETE /admin/users/{userId}/opt-out` | Opt the user back in. |
 
 The live WebSocket feed stays at `GET /admin/firehose`, outside v2. See
 [CONFIG.md](./CONFIG.md) for its formats and slow-client behavior.
