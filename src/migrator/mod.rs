@@ -65,11 +65,11 @@ impl Migrator {
             .filter(|channel| self.channel_ids.is_empty() || self.channel_ids.contains(channel))
             .collect();
 
-        info!("Migrating channels {filtered_channels:?}");
+        info!(channels = ?filtered_channels, "Migrating channels");
 
         let mut channel_logs: IndexMap<String, ChannelLogDateMap> = IndexMap::new();
 
-        info!("Checking available logs");
+        info!("Scanning the logs to migrate");
 
         let mut total_bytes = 0;
 
@@ -83,18 +83,21 @@ impl Migrator {
         let channel_count = channel_logs.len();
         let total_mb = total_bytes / 1024 / 1024;
 
-        info!("Migrating {channel_count} channels with {total_mb} MiB of logs");
-        info!("NOTE: the estimation numbers will be wrong if you use gzip compressed logs");
+        info!(
+            channels = channel_count,
+            size_mib = total_mb,
+            "Migrating logs; progress estimates are wrong for gzip compressed logs"
+        );
 
         let total_read_bytes = Arc::new(AtomicU64::new(0));
         let migrated_percentage = Arc::new(AtomicU64::new(0));
 
         for (i, (channel_id, available_logs)) in (1..).zip(channel_logs) {
-            info!("Reading channel {channel_id} ({i}/{channel_count})");
+            info!(%channel_id, channel = i, channels = channel_count, "Reading channel");
 
             for (year, months) in available_logs {
                 for (month, days) in months {
-                    debug!("Waiting for free job slot");
+                    debug!("Waiting for a free job slot");
                     let permit = semaphore.clone().acquire_owned().await.unwrap();
                     let migrator = self.clone();
                     let channel_id = channel_id.clone();
@@ -113,7 +116,7 @@ impl Migrator {
                             .with_max_rows(INSERT_BATCH_SIZE)
                             .with_period(Some(Duration::from_secs(15)));
 
-                        info!("Migrating channel {channel_id} date {year}-{month}");
+                        info!(%channel_id, year, month, "Migrating month");
 
                         for day in days {
                             let date = Utc
@@ -136,18 +139,22 @@ impl Migrator {
                             if new_percentage - old_percentage >= 1 {
                                 let processed_mb = processed_bytes / 1024 / 1024;
                                 info!(
-                                    "Progress estimation: {processed_mb}/{total_mb} MiB ({new_percentage}%)",
+                                    processed_mib = processed_mb,
+                                    total_mib = total_mb,
+                                    percent = new_percentage,
+                                    "Migration progress estimate"
                                 );
                                 migrated_percentage.store(new_percentage, Ordering::SeqCst);
                             }
                         }
 
-                        debug!("Flushing messages");
+                        debug!("Flushing inserts");
                         let stats = inserter.end().await.context("Could not flush messages")?;
                         if stats.rows > 0 {
                             info!(
-                                "DB: {} entries ({} transactions) have been inserted",
-                                stats.rows, stats.transactions,
+                                rows = stats.rows,
+                                transactions = stats.transactions,
+                                "Inserted messages"
                             );
                         }
 
@@ -164,12 +171,12 @@ impl Migrator {
         }
 
         let elapsed = started_at.elapsed();
-        info!("Migration finished in {elapsed:?}");
+        info!(took_secs = elapsed.as_secs(), "Migration finished");
 
         if let Some(throughput) =
             (total_read_bytes.load(Ordering::SeqCst) / 1024 / 1024).checked_div(elapsed.as_secs())
         {
-            info!("Average migration speed: {throughput} MiB/s");
+            info!(mib_per_sec = throughput, "Average migration speed");
         }
 
         Ok(())
@@ -189,13 +196,13 @@ impl Migrator {
         let uncompressed_file_path = day_path.join(UNCOMPRESSED_CHANNEL_FILE);
 
         if compressed_file_path.exists() {
-            debug!("Reading compressed log {compressed_file_path:?}");
+            debug!(path = %compressed_file_path.display(), "Reading compressed log");
             let file_reader = BufReader::new(File::open(&compressed_file_path)?);
             let gz = BufReader::new(GzDecoder::new(file_reader));
 
             self.migrate_reader(gz, date, channel_id, inserter).await
         } else if uncompressed_file_path.exists() {
-            debug!("Reading uncompressed log {uncompressed_file_path:?}");
+            debug!(path = %uncompressed_file_path.display(), "Reading uncompressed log");
             let file_reader = BufReader::new(File::open(&uncompressed_file_path)?);
 
             self.migrate_reader(file_reader, date, channel_id, inserter)
@@ -225,8 +232,9 @@ impl Migrator {
         let stats = inserter.commit().await?;
         if stats.rows > 0 {
             info!(
-                "DB: {} entries ({} transactions) have been inserted",
-                stats.rows, stats.transactions,
+                rows = stats.rows,
+                transactions = stats.transactions,
+                "Inserted messages"
             );
         }
 
@@ -248,8 +256,8 @@ async fn write_line(
             let user_id = extract_user_id(&irc_message).unwrap_or_else(|| {
                 if irc_message.command() == Command::Privmsg {
                     warn!(
-                        "Could not extract user id from PRIVMSG, partially malformed message: `{}`",
-                        irc_message.raw()
+                        raw = irc_message.raw(),
+                        "Skipping PRIVMSG without a user id"
                     );
                 }
                 ""
@@ -268,12 +276,12 @@ async fn write_line(
                     }
                 }
                 Err(err) => {
-                    error!("Could not convert message {unstructured:?}: {err}");
+                    error!(raw = %unstructured.raw, error = format!("{err:#}"), "Could not parse an IRC message");
                 }
             }
         }
         None => {
-            warn!("Could not parse message `{raw}`");
+            warn!(raw = %raw, "Skipping unparsable line");
         }
     }
 
