@@ -83,12 +83,28 @@ export default {
   optOut: {
     title: 'Opt out of logging',
     description:
-      'Get a code and write the command in the chat of any logged channel within a minute. Your messages are deleted and you are no longer logged.',
+      'Get a one-time code, then write a command with it in a Twitch chat within a minute. Twitch vouches for who sent the message, so no account is needed here.',
     getCode: 'Get a code',
-    command: 'Write this in chat',
+    newCode: 'Get a new code',
+    codePlaceholder: '<code>',
     copy: 'Copy',
-    copied: 'Copied',
-    expires: 'Expires {time}',
+    expires: 'Valid until {time}',
+    viewer: {
+      tab: 'Viewers',
+      title: 'Your messages',
+      description: 'Write the command in the chat of any logged channel.',
+      optOut: 'Stop logging me and delete my messages',
+      optIn: 'Log me again',
+      note: 'Opting out deletes your messages and logins in every channel for good; opting back in only logs new messages.',
+    },
+    streamer: {
+      tab: 'Streamers',
+      title: 'Your channel',
+      description: 'Write the command in your own chat, from your broadcaster account.',
+      optOut: 'Stop logging my channel and hide its logs',
+      optIn: 'Log my channel again and show its logs',
+      note: 'The logs of the channel are hidden, not deleted, so they come back when you opt back in.',
+    },
   },
   notFound: {
     title: 'Page not found',
