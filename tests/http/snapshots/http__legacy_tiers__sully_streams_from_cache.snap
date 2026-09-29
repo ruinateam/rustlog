@@ -1,0 +1,22 @@
+---
+source: tests/http/legacy_tiers.rs
+expression: "get(\"/sully/11111/2026\").send().await"
+---
+GET /sully/11111/2026
+status: 200 OK
+content-type: application/json
+cache-control: public, max-age=3600
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+{
+  "channel": "11111",
+  "streams": [
+    {
+      "lengthMinutes": 120,
+      "startIso": "2026-03-01T09:30:00+03:00",
+      "streamId": "1"
+    }
+  ],
+  "total": 1,
+  "year": 2026
+}

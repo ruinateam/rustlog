@@ -281,21 +281,25 @@ async fn resolve_channel(app: &App, id_type: ChannelIdType, channel: &str) -> Re
 }
 
 pub async fn get_sully_streams(
+    app: State<App>,
     Path((channel, year)): Path<(String, i32)>,
 ) -> Result<impl IntoApiResponse> {
     // Prefer a live fetch (failures are logged), fall back to the cache.
-    if let Ok((total, streams)) = sully::fetch(&channel, year).await {
+    if let Ok((total, streams)) = app.sully.fetch(&channel, year).await {
         let list = sully::StreamList {
             channel,
             year,
             total,
             streams,
         };
-        let _ = sully::write_cache(&list);
+        let _ = app.sully.write_cache(&list);
         return Ok((cache_header(600), Json(SullyStreamsResponse::from(list))));
     }
 
-    if let Some(cached) = sully::read_cache(&channel, year).filter(|list| !list.streams.is_empty())
+    if let Some(cached) = app
+        .sully
+        .read_cache(&channel, year)
+        .filter(|list| !list.streams.is_empty())
     {
         return Ok((cache_header(3600), Json(SullyStreamsResponse::from(cached))));
     }

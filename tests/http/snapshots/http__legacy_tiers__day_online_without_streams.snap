@@ -1,0 +1,20 @@
+---
+source: tests/http/legacy_tiers.rs
+expression: "get(\"/channelid/11111/tiers/2026/3/2?mode=online\").send().await"
+---
+GET /channelid/11111/tiers/2026/3/2?mode=online
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+{
+  "day": 2,
+  "entries": [],
+  "month": 3,
+  "timezone": "Europe/Moscow",
+  "totalMessages": 0,
+  "totalUniqueMessages": 0,
+  "totalUsers": 0,
+  "year": 2026
+}

@@ -83,6 +83,7 @@ embed-frontend = ["dep:rust-embed"]
 [dev-dependencies]
 insta = "1.48.0"
 pretty_assertions = "1.4.0"
+tempfile = "3.27.0"
 tower = { version = "0.5.3", features = ["util"] }
 
 # Line tables keep file and line numbers in backtraces; full debug info

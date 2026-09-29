@@ -1,6 +1,7 @@
 pub mod cache;
 
 use self::cache::{BadgesCache, UsersCache};
+use crate::services::sully::SullyGnome;
 use crate::{
     config::Config,
     db::{delete_user_logs, writer::FlushBuffer},
@@ -28,6 +29,7 @@ pub struct App {
     pub token: Arc<RwLock<Option<AppAccessToken>>>,
     pub users: UsersCache,
     pub badges: BadgesCache,
+    pub sully: SullyGnome,
     pub optout_codes: Arc<DashSet<String>>,
     pub db: Arc<clickhouse::Client>,
     pub config: Arc<Config>,

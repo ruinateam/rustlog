@@ -18,6 +18,7 @@ use rustlog::{
     maintenance,
     migrator::Migrator,
     mirror,
+    services::sully::SullyGnome,
     state::OperationalState,
     web, ShutdownRx,
 };
@@ -198,6 +199,8 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
         token: token.clone(),
         users: UsersCache::default(),
         badges: BadgesCache::default(),
+        sully: SullyGnome::new(SullyGnome::DEFAULT_URL, SullyGnome::DEFAULT_CACHE_DIR)
+            .context("Could not create the SullyGnome client")?,
         config: config.clone(),
         db,
         state,

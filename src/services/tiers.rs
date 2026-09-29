@@ -1,6 +1,6 @@
 //! Builds tier tables from the stored chat activity.
 
-use super::sully::{self, Stream};
+use super::sully::Stream;
 use crate::{
     app::App,
     db::{
@@ -17,7 +17,8 @@ use std::collections::{HashMap, HashSet};
 /// Ranks the users of a channel in a period.
 ///
 /// `channel` is the channel as given by the client, a login or an id; stream
-/// windows for the online and offline modes are looked up by it.
+/// windows for the online and offline modes are looked up by it on
+/// SullyGnome.
 pub async fn compute(
     app: &App,
     channel_id: &str,
@@ -28,11 +29,15 @@ pub async fn compute(
 ) -> Result<RankedTiers> {
     let excluded: HashSet<String> = excluded_bots.iter().map(|bot| bot.to_lowercase()).collect();
 
-    // Always try a live fetch first, falling back to the cache.
-    let streams = sully::load(channel, period.year())
-        .await
-        .map(|list| list.streams)
-        .unwrap_or_default();
+    let streams = match mode {
+        TierMode::All => Vec::new(),
+        TierMode::Online | TierMode::Offline => app
+            .sully
+            .load(channel, period.year())
+            .await
+            .map(|list| list.streams)
+            .unwrap_or_default(),
+    };
 
     let mut rows_by_user: HashMap<String, UserWindows> = HashMap::new();
     match period {

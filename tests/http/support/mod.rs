@@ -16,11 +16,13 @@ use rustlog::{
     bot::BotMessage,
     config::Config,
     db::{setup_db, writer::FlushBuffer},
+    services::sully::SullyGnome,
     state::OperationalState,
     web,
 };
 use serde_json::json;
-use std::{env, sync::Arc};
+use std::{env, fs, sync::Arc};
+use tempfile::TempDir;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
 use tower::ServiceExt;
 use tower_http::normalize_path::NormalizePath;
@@ -51,11 +53,23 @@ VALUES
     ('11111', 'testchan', toDateTime64('2026-02-10 05:00:00.000', 3, 'UTC'), '00000000-0000-0000-0000-000000000006', 1, '22222', 'alice', 'Alice', 16711680, [], 'last month', 0)
 ";
 
+/// SullyGnome is never reachable in tests (nothing listens on the discard
+/// port), so stream lists always come from the cache.
+const UNREACHABLE_SULLYGNOME: &str = "http://127.0.0.1:9";
+
+/// Cached SullyGnome streams of channel `11111` in 2026: one stream on
+/// 2026-03-01 from 06:30 to 08:30 UTC, which covers alice's 07:00 message.
+const SULLY_CACHE: (&str, &str) = (
+    "11111-2026.json",
+    r#"{"channel":"11111","year":2026,"total":1,"streams":[{"streamId":"1","startIso":"2026-03-01T09:30:00+03:00","lengthMinutes":120}]}"#,
+);
+
 /// A fresh database with seeded messages and the full HTTP service on top.
 struct TestServer {
     service: NormalizePath<Router>,
     root: clickhouse::Client,
     db_name: String,
+    _sully_cache: TempDir,
     // Keep the channel ends alive for the lifetime of the service.
     _bot_rx: mpsc::Receiver<BotMessage>,
     _shutdown_tx: watch::Sender<()>,
@@ -96,6 +110,10 @@ impl TestServer {
         setup_db(&db, &db_name, &config).await.unwrap();
         db.query(SEED).execute().await.unwrap();
 
+        let sully_cache = TempDir::new().unwrap();
+        let (file_name, contents) = SULLY_CACHE;
+        fs::write(sully_cache.path().join(file_name), contents).unwrap();
+
         let db = Arc::new(db);
         let app = App {
             helix_client: HelixClient::default(),
@@ -104,6 +122,7 @@ impl TestServer {
             token: Arc::new(RwLock::new(None)),
             users: UsersCache::default(),
             badges: BadgesCache::default(),
+            sully: SullyGnome::new(UNREACHABLE_SULLYGNOME, sully_cache.path()).unwrap(),
             optout_codes: Arc::default(),
             state: OperationalState::load(db.clone()).await.unwrap(),
             db,
@@ -119,6 +138,7 @@ impl TestServer {
             service: web::service(app, bot_tx, shutdown_rx),
             root,
             db_name,
+            _sully_cache: sully_cache,
             _bot_rx: bot_rx,
             _shutdown_tx: shutdown_tx,
         }
