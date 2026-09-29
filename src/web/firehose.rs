@@ -52,17 +52,12 @@ lazy_static! {
     .unwrap();
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum FirehoseFormat {
+    #[default]
     Raw,
     JsonBasic,
-}
-
-impl Default for FirehoseFormat {
-    fn default() -> Self {
-        Self::Raw
-    }
 }
 
 impl FirehoseFormat {

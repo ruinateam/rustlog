@@ -120,20 +120,15 @@ async fn availability(
     Ok((no_cache_header(), Json(AvailableLogs { available_logs })))
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum LogFormat {
+    #[default]
     BasicJson,
     FullJson,
     Ndjson,
     Text,
     Raw,
-}
-
-impl Default for LogFormat {
-    fn default() -> Self {
-        Self::BasicJson
-    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

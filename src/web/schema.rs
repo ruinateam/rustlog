@@ -480,9 +480,10 @@ impl From<Stream> for SullyStreamEntry {
     }
 }
 
-#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TierMode {
+    #[default]
     All,
     Online,
     Offline,
@@ -513,12 +514,6 @@ pub struct TierModeQuery {
         deserialize_with = "deserialize_exclude_bots"
     )]
     pub exclude_bots: Vec<String>,
-}
-
-impl Default for TierMode {
-    fn default() -> Self {
-        Self::All
-    }
 }
 
 fn default_tier_mode() -> TierMode {

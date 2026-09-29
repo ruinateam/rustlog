@@ -86,12 +86,10 @@ impl Migrator {
         info!("Migrating {channel_count} channels with {total_mb} MiB of logs");
         info!("NOTE: the estimation numbers will be wrong if you use gzip compressed logs");
 
-        let mut i = 1;
-
         let total_read_bytes = Arc::new(AtomicU64::new(0));
         let migrated_percentage = Arc::new(AtomicU64::new(0));
 
-        for (channel_id, available_logs) in channel_logs {
+        for (i, (channel_id, available_logs)) in (1..).zip(channel_logs) {
             info!("Reading channel {channel_id} ({i}/{channel_count})");
 
             for (year, months) in available_logs {
@@ -159,7 +157,6 @@ impl Migrator {
                     handles.push(handle);
                 }
             }
-            i += 1;
         }
 
         for handle in handles {

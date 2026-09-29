@@ -166,7 +166,7 @@ async fn migrate_partition(
 
                 i.fetch_add(1, Ordering::Relaxed);
                 let value = i.load(Ordering::Relaxed);
-                if value % 1_000_000 == 0 {
+                if value.is_multiple_of(1_000_000) {
                     info!("Processed {value} messages");
                 }
             }

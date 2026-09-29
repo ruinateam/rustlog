@@ -23,7 +23,7 @@ fmt-check:
 
 # Lint the code
 clippy:
-    cargo clippy --all-targets
+    cargo clippy --all-targets -- -D warnings
 
 # Run the tests
 test *args:

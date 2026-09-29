@@ -16,7 +16,7 @@ use std::{
 };
 
 pub enum LogsStream {
-    Cursor(CursorStream),
+    Cursor(Box<CursorStream>),
     MultiQuery(MultiQueryStream),
     Provided(Option<Vec<StructuredMessage<'static>>>),
 }
@@ -26,9 +26,9 @@ impl LogsStream {
         cursor: RowCursor<StructuredMessage<'static>>,
         buffer_response: FlushBufferResponse,
     ) -> Result<Self> {
-        Ok(Self::Cursor(
+        Ok(Self::Cursor(Box::new(
             CursorStream::new(cursor, buffer_response).await?,
-        ))
+        )))
     }
 
     pub fn new_provided(messages: Vec<StructuredMessage<'static>>) -> Result<Self> {

@@ -99,16 +99,18 @@ async fn main() -> anyhow::Result<()> {
         }) => {
             mirror::run(
                 db,
-                base_url,
-                local_cache,
-                channel,
-                year,
-                month,
-                day,
-                batch,
-                http_concurrency,
-                proxy,
-                rps,
+                mirror::MirrorOptions {
+                    base_url,
+                    local_cache,
+                    channel,
+                    year,
+                    month,
+                    day,
+                    batch,
+                    http_concurrency,
+                    proxies: proxy,
+                    rps,
+                },
             )
             .await
         }

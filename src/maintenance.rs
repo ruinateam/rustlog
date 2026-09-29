@@ -230,7 +230,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
             continue;
         }
 
-        let mut remaining: Vec<NaiveDate> = missing.iter().copied().collect();
+        let mut remaining: Vec<NaiveDate> = missing.to_vec();
 
         for base_url in instances {
             if remaining.is_empty() {
@@ -268,7 +268,7 @@ pub async fn fill_missing(db: Client, options: FillMissingOptions) -> anyhow::Re
             }
 
             // Check which days got filled after this batch.
-            let current = read_local_days(&db, &[channel.clone()], options.year).await?;
+            let current = read_local_days(&db, std::slice::from_ref(channel), options.year).await?;
             let filled_days: BTreeSet<NaiveDate> = current
                 .get(channel)
                 .map(|days| days.keys().copied().collect())
@@ -507,7 +507,7 @@ async fn find_repair_candidate_for_day(
                 Ok(remote_unique_ids) => {
                     if best
                         .as_ref()
-                        .map_or(true, |(_, best_count)| remote_unique_ids > *best_count)
+                        .is_none_or(|(_, best_count)| remote_unique_ids > *best_count)
                     {
                         best = Some((base_url, remote_unique_ids));
                     }
@@ -838,7 +838,7 @@ async fn execute_duplicate_cleanup(
 
         // Step 2: Insert month-by-month to stay within memory limits.
         let partitions: Vec<String> = db
-            .query(&format!(
+            .query(
                 "
                 SELECT DISTINCT partition
                 FROM system.parts
@@ -846,8 +846,8 @@ async fn execute_duplicate_cleanup(
                   AND table = 'message_structured'
                   AND active = 1
                 ORDER BY partition
-                "
-            ))
+                ",
+            )
             .fetch_all()
             .await?;
 

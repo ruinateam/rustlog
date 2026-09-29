@@ -34,9 +34,8 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
-      # TODO: add `-- -D warnings` once the existing lints are fixed.
       - name: Run clippy
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets -- -D warnings
 
   test:
     name: Test

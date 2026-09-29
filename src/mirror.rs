@@ -346,20 +346,44 @@ struct RemoteMessage {
     tags: HashMap<String, String>,
 }
 
+/// Options of [`run`].
+pub struct MirrorOptions {
+    /// Base URL of the remote rustlog or justlog instance.
+    pub base_url: String,
+    /// Read the logs from this local cache directory instead of over HTTP.
+    pub local_cache: Option<String>,
+    /// Login of the channel to mirror.
+    pub channel: String,
+    /// When given, only days in this year.
+    pub year: Option<u32>,
+    /// When given, only days in this month (1-12).
+    pub month: Option<u32>,
+    /// When given, only this day of the month.
+    pub day: Option<u32>,
+    /// Rows per ClickHouse insert.
+    pub batch: usize,
+    /// Days fetched in parallel.
+    pub http_concurrency: usize,
+    /// HTTP(S) proxies to spread the requests over.
+    pub proxies: Vec<String>,
+    /// Requests per second per proxy; a direct connection counts as one.
+    pub rps: f64,
+}
+
 /// Mirror remote logs for a specific channel.
-pub async fn run(
-    db: Client,
-    base_url: String,
-    local_cache: Option<String>,
-    channel: String,
-    year: Option<u32>,
-    month: Option<u32>,
-    day: Option<u32>,
-    batch: usize,
-    http_concurrency: usize,
-    proxies: Vec<String>,
-    rps: f64,
-) -> anyhow::Result<()> {
+pub async fn run(db: Client, options: MirrorOptions) -> anyhow::Result<()> {
+    let MirrorOptions {
+        base_url,
+        local_cache,
+        channel,
+        year,
+        month,
+        day,
+        batch,
+        http_concurrency,
+        proxies,
+        rps,
+    } = options;
     let base_url = base_url.trim_end_matches('/').to_string();
     let options = RunDaysOptions::new(batch, http_concurrency);
     let http = MirrorHttp::new(
@@ -384,9 +408,9 @@ pub async fn run(
             Some((y, m, d))
         })
         .filter(|(y, m, d)| {
-            year.map_or(true, |yy| yy == *y)
-                && month.map_or(true, |mm| mm == *m)
-                && day.map_or(true, |dd| dd == *d)
+            year.is_none_or(|yy| yy == *y)
+                && month.is_none_or(|mm| mm == *m)
+                && day.is_none_or(|dd| dd == *d)
         })
         .collect();
 
@@ -477,7 +501,7 @@ pub async fn run_days(
             }
             written += 1;
 
-            if written % insert_max_rows == 0 {
+            if written.is_multiple_of(insert_max_rows) {
                 info!("Flushing insert after {} rows...", written);
                 if let Err(e) = insert.end().await {
                     error!("insert.end failed after {} rows: {}", written, e);
@@ -705,7 +729,7 @@ async fn process_day(
                             stats.skipped_dup += 1;
                             continue;
                         }
-                        tx.send(mapped).await.context("send to writer channel")?;
+                        tx.send(*mapped).await.context("send to writer channel")?;
                         stats.added += 1;
                     }
                     MapResult::SkipNoId => stats.skipped_no_id += 1,
@@ -866,7 +890,7 @@ fn compute_time_range(tasks: &[(u32, u32, u32)]) -> (u64, u64) {
 }
 
 enum MapResult {
-    Ok(StructuredMessage<'static>, Uuid),
+    Ok(Box<StructuredMessage<'static>>, Uuid),
     SkipNoId,
     SkipInvalid,
 }
@@ -999,7 +1023,7 @@ fn map_message(channel_login: &str, msg: RemoteMessage) -> MapResult {
         extra_tags,
     };
 
-    MapResult::Ok(structured, parsed_id)
+    MapResult::Ok(Box::new(structured), parsed_id)
 }
 
 #[cfg(test)]
