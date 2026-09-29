@@ -97,7 +97,7 @@ jobs:
           tool: cargo-nextest
 
       - name: Run integration tests
-        run: cargo nextest run --run-ignored only
+        run: cargo nextest run --profile integration
 
   deny:
     name: Dependency audit

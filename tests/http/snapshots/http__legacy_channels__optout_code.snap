@@ -1,0 +1,10 @@
+---
+source: tests/http/legacy_channels.rs
+expression: "request(Method::POST, \"/optout\").without_body().send().await"
+---
+POST /optout
+status: 200 OK
+content-type: application/json
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+<body omitted>

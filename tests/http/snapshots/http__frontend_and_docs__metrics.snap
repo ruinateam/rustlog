@@ -1,0 +1,10 @@
+---
+source: tests/http/frontend_and_docs.rs
+expression: "get(\"/metrics\").without_body().send().await"
+---
+GET /metrics
+status: 200 OK
+content-type: text/plain; charset=utf-8
+cache-control: no-cache
+---
+<body omitted>

@@ -1,0 +1,10 @@
+---
+source: tests/http/legacy_stats.rs
+expression: "get(\"/channelid/11111/userid/22222/stats\").send().await"
+---
+GET /channelid/11111/userid/22222/stats
+status: 503 Service Unavailable
+content-type: text/plain; charset=utf-8
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+Twitch token is not ready yet

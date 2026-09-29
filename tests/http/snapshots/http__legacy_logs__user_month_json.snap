@@ -1,0 +1,86 @@
+---
+source: tests/http/legacy_logs.rs
+expression: "get(\"/channelid/11111/userid/22222/2026/3?json\").send().await"
+---
+GET /channelid/11111/userid/22222/2026/3?json
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+{
+  "messages": [
+    {
+      "channel": "testchan",
+      "displayName": "Alice",
+      "id": "00000000-0000-0000-0000-000000000001",
+      "raw": "@badge-info=;badges=subscriber/12;color=#FF0000;display-name=Alice;emotes=;flags=;id=00000000-0000-0000-0000-000000000001;room-id=11111;subscriber=1;tmi-sent-ts=1772348400000;user-id=22222;user-type= :alice!alice@alice.tmi.twitch.tv PRIVMSG #testchan :hello world",
+      "tags": {
+        "badge-info": "",
+        "badges": "subscriber/12",
+        "color": "#FF0000",
+        "display-name": "Alice",
+        "emotes": "",
+        "flags": "",
+        "id": "00000000-0000-0000-0000-000000000001",
+        "room-id": "11111",
+        "subscriber": "1",
+        "tmi-sent-ts": "1772348400000",
+        "user-id": "22222",
+        "user-type": ""
+      },
+      "text": "hello world",
+      "timestamp": "2026-03-01T07:00:00Z",
+      "type": 1,
+      "username": "alice"
+    },
+    {
+      "channel": "testchan",
+      "displayName": "Alice",
+      "id": "00000000-0000-0000-0000-000000000003",
+      "raw": "@badge-info=;badges=subscriber/12;color=#FF0000;display-name=Alice;emotes=;flags=;id=00000000-0000-0000-0000-000000000003;room-id=11111;subscriber=1;tmi-sent-ts=1772355600000;user-id=22222;user-type= :alice!alice@alice.tmi.twitch.tv PRIVMSG #testchan :hello again",
+      "tags": {
+        "badge-info": "",
+        "badges": "subscriber/12",
+        "color": "#FF0000",
+        "display-name": "Alice",
+        "emotes": "",
+        "flags": "",
+        "id": "00000000-0000-0000-0000-000000000003",
+        "room-id": "11111",
+        "subscriber": "1",
+        "tmi-sent-ts": "1772355600000",
+        "user-id": "22222",
+        "user-type": ""
+      },
+      "text": "hello again",
+      "timestamp": "2026-03-01T09:00:00Z",
+      "type": 1,
+      "username": "alice"
+    },
+    {
+      "channel": "testchan",
+      "displayName": "Alice",
+      "id": "00000000-0000-0000-0000-000000000005",
+      "raw": "@badge-info=;badges=subscriber/12;color=#FF0000;display-name=Alice;emotes=;flags=;id=00000000-0000-0000-0000-000000000005;room-id=11111;subscriber=1;tmi-sent-ts=1773594000000;user-id=22222;user-type= :alice!alice@alice.tmi.twitch.tv PRIVMSG #testchan :mid month",
+      "tags": {
+        "badge-info": "",
+        "badges": "subscriber/12",
+        "color": "#FF0000",
+        "display-name": "Alice",
+        "emotes": "",
+        "flags": "",
+        "id": "00000000-0000-0000-0000-000000000005",
+        "room-id": "11111",
+        "subscriber": "1",
+        "tmi-sent-ts": "1773594000000",
+        "user-id": "22222",
+        "user-type": ""
+      },
+      "text": "mid month",
+      "timestamp": "2026-03-15T17:00:00Z",
+      "type": 1,
+      "username": "alice"
+    }
+  ]
+}

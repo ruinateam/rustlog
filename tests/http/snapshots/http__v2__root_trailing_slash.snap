@@ -1,0 +1,8 @@
+---
+source: tests/http/v2.rs
+expression: "get(\"/api/v2/\").send().await"
+---
+GET /api/v2/
+status: 404 Not Found
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---

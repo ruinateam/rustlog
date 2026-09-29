@@ -1,0 +1,15 @@
+---
+source: tests/http/legacy_channels.rs
+expression: "get(\"/capabilities\").send().await"
+---
+GET /capabilities
+status: 200 OK
+content-type: application/json
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+[
+  "arbitrary-range-query",
+  "search",
+  "stats",
+  "namehistory"
+]

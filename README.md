@@ -77,7 +77,13 @@ just web-check
 
 ### Тесты
 
-Integration-тесты в [`src/web/tests.rs`](src/web/tests.rs) поднимают весь HTTP-стек на отдельной базе в ClickHouse, засевают сообщения и сверяют статус, заголовки и тело ответа каждого маршрута со snapshot-ами из `src/web/snapshots` (через [insta](https://insta.rs)). Так legacy API не может измениться незаметно. Без ClickHouse они пропускаются. Чтобы запустить их на своём сервере ClickHouse (он должен работать в UTC), задайте `RUSTLOG_TEST_CLICKHOUSE_URL`, при необходимости `RUSTLOG_TEST_CLICKHOUSE_USER` и `RUSTLOG_TEST_CLICKHOUSE_PASSWORD`, и выполните `cargo nextest run --run-ignored only`.
+Unit-тесты лежат рядом с кодом в `src/`, а integration-тесты HTTP API — в [`tests/http`](tests/http):
+
+- `support/` — общий фикстур: отдельная база в ClickHouse с засеянными сообщениями, весь HTTP-стек поверх неё и построитель запросов;
+- `legacy_*.rs`, `v2.rs`, `frontend_and_docs.rs` — по одному тесту на сценарий, сгруппированные по областям API;
+- `snapshots/` — ожидаемые ответы (статус, заголовки, тело) для [insta](https://insta.rs), так что legacy API не может измениться незаметно.
+
+Integration-тестам нужен ClickHouse, поэтому профиль nextest по умолчанию их не запускает (см. [`.config/nextest.toml`](.config/nextest.toml)): `just test` гоняет только unit-тесты, `just test-integration` — только integration. Чтобы запустить их на своём сервере ClickHouse (он должен работать в UTC), задайте `RUSTLOG_TEST_CLICKHOUSE_URL`, при необходимости `RUSTLOG_TEST_CLICKHOUSE_USER` и `RUSTLOG_TEST_CLICKHOUSE_PASSWORD`, и выполните `cargo nextest run --profile integration`. Обычный `cargo test` запустит и их, и без этих переменных они упадут с понятным сообщением.
 
 Если поведение меняется намеренно, обновите snapshot-ы (`INSTA_UPDATE=always just test-integration`) и проверьте дифф в PR.
 

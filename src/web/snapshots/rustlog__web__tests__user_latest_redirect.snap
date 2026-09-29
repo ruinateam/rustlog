@@ -1,9 +1,0 @@
----
-source: src/web/tests.rs
-expression: rendered
----
-GET /channelid/11111/userid/22222
-status: 303 See Other
-location: /channelid/11111/userid/22222/2026/3
-x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
----

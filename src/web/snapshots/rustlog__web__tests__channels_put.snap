@@ -1,8 +1,0 @@
----
-source: src/web/tests.rs
-expression: rendered
----
-PUT /channels
-status: 405 Method Not Allowed
-x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
----

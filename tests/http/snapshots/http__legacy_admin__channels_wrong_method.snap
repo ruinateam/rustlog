@@ -1,0 +1,8 @@
+---
+source: tests/http/legacy_admin.rs
+expression: "get(\"/admin/channels\").admin_key().send().await"
+---
+GET /admin/channels
+status: 405 Method Not Allowed
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---

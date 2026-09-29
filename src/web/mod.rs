@@ -7,9 +7,6 @@ pub mod schema;
 mod trace_layer;
 mod v2;
 
-#[cfg(test)]
-mod tests;
-
 use self::handlers::no_cache_header;
 use crate::{
     app::App,

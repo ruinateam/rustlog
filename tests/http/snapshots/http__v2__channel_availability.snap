@@ -1,0 +1,34 @@
+---
+source: tests/http/v2.rs
+expression: "get(\"/api/v2/channels/11111/availability\").send().await"
+---
+GET /api/v2/channels/11111/availability
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+{
+  "availableLogs": [
+    {
+      "day": "15",
+      "month": "3",
+      "year": "2026"
+    },
+    {
+      "day": "2",
+      "month": "3",
+      "year": "2026"
+    },
+    {
+      "day": "1",
+      "month": "3",
+      "year": "2026"
+    },
+    {
+      "day": "10",
+      "month": "2",
+      "year": "2026"
+    }
+  ]
+}

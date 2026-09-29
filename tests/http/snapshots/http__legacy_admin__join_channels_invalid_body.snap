@@ -1,0 +1,10 @@
+---
+source: tests/http/legacy_admin.rs
+expression: "request(Method::POST,\n\"/admin/channels\").admin_key().json(r#\"{\"bad\":true}\"#).send().await"
+---
+POST /admin/channels
+status: 422 Unprocessable Entity
+content-type: text/plain; charset=utf-8
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+Failed to deserialize the JSON body into the target type: missing field `channels` at line 1 column 12

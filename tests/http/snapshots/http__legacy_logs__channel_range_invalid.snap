@@ -1,0 +1,10 @@
+---
+source: tests/http/legacy_logs.rs
+expression: "get(\"/channelid/11111?from=garbage&to=2026-03-02T12:00:00Z\").send().await"
+---
+GET /channelid/11111?from=garbage&to=2026-03-02T12:00:00Z
+status: 400 Bad Request
+content-type: text/plain; charset=utf-8
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+Failed to deserialize query string: from: input contains invalid characters

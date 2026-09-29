@@ -1,0 +1,11 @@
+---
+source: tests/http/legacy_logs.rs
+expression: "get(\"/channelid/11111/2026/3/1?reverse&limit=1\").send().await"
+---
+GET /channelid/11111/2026/3/1?reverse&limit=1
+status: 200 OK
+content-type: text/plain; charset=utf-8
+cache-control: no-cache
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+[2026-03-01 09:00:00] #testchan alice: hello again

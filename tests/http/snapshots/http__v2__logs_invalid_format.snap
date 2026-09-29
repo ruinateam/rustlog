@@ -1,0 +1,10 @@
+---
+source: tests/http/v2.rs
+expression: "get(format!(\"{LOGS}?{RANGE}&format=bogus\")).send().await"
+---
+GET /api/v2/channels/11111/users/22222/logs?from=2026-03-01T00:00:00Z&to=2026-04-01T00:00:00Z&format=bogus
+status: 400 Bad Request
+content-type: text/plain; charset=utf-8
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+Failed to deserialize query string: format: unknown variant `bogus`, expected one of `basic-json`, `full-json`, `ndjson`, `text`, `raw`

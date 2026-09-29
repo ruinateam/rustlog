@@ -1,0 +1,10 @@
+---
+source: tests/http/legacy_admin.rs
+expression: "request(Method::POST,\n\"/admin/channels\").header(\"x-api-key\", \"wrong\").json(CHANNELS).send().await"
+---
+POST /admin/channels
+status: 403 Forbidden
+content-type: text/plain; charset=utf-8
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+No, I don't think so

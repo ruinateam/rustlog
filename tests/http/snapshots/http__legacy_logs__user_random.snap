@@ -1,0 +1,11 @@
+---
+source: tests/http/legacy_logs.rs
+expression: "get(\"/channelid/11111/userid/22222/random\").without_body().send().await"
+---
+GET /channelid/11111/userid/22222/random
+status: 200 OK
+content-type: text/plain; charset=utf-8
+cache-control: no-cache
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+<body omitted>

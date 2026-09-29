@@ -1,0 +1,10 @@
+---
+source: tests/http/frontend_and_docs.rs
+expression: "get(\"/openapi.json\").without_body().send().await"
+---
+GET /openapi.json
+status: 200 OK
+content-type: application/json
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+<body omitted>

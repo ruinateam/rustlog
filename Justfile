@@ -34,7 +34,7 @@ test-integration *args: db-up
     RUSTLOG_TEST_CLICKHOUSE_URL=http://localhost:8123 \
     RUSTLOG_TEST_CLICKHOUSE_USER="${CLICKHOUSE_USER:-user}" \
     RUSTLOG_TEST_CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}" \
-    cargo nextest run --run-ignored only {{ args }}
+    cargo nextest run --profile integration {{ args }}
 
 # Audit dependencies for advisories, licenses and banned crates
 deny:

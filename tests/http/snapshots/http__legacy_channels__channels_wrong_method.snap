@@ -1,0 +1,8 @@
+---
+source: tests/http/legacy_channels.rs
+expression: "request(Method::PUT, \"/channels\").send().await"
+---
+PUT /channels
+status: 405 Method Not Allowed
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---

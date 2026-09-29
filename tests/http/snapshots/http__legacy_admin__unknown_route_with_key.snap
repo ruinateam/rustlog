@@ -1,0 +1,10 @@
+---
+source: tests/http/legacy_admin.rs
+expression: "get(\"/admin/unknown\").admin_key().send().await"
+---
+GET /admin/unknown
+status: 400 Bad Request
+content-type: text/plain; charset=utf-8
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+Invalid URL: unknown variant `admin`, expected `channel` or `channelid`

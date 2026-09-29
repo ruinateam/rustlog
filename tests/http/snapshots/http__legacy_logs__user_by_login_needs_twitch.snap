@@ -1,0 +1,10 @@
+---
+source: tests/http/legacy_logs.rs
+expression: "get(\"/channel/testchan/user/alice/2026/3\").send().await"
+---
+GET /channel/testchan/user/alice/2026/3
+status: 503 Service Unavailable
+content-type: text/plain; charset=utf-8
+x-rustlog-capabilities: arbitrary-range-query,search,stats,namehistory
+---
+Twitch token is not ready yet
