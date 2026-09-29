@@ -1,11 +1,12 @@
+use crate::{
+    ShutdownRx,
+    app::App,
+    irc::tags::{extract_channel_and_user_from_raw, extract_raw_timestamp},
+    storage::message::{StructuredMessage, UnstructuredMessage},
+};
 use anyhow::{Context, anyhow};
 use chrono::Utc;
 use prometheus::{IntCounter, IntCounterVec, register_int_counter, register_int_counter_vec};
-use rustlog_app::{App, BotMessage, ShutdownRx};
-use rustlog_storage::{
-    irc::tags::{extract_channel_and_user_from_raw, extract_raw_timestamp},
-    message::{StructuredMessage, UnstructuredMessage},
-};
 use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::{
@@ -23,6 +24,12 @@ const CHANNEL_REJOIN_INTERVAL_SECONDS: u64 = 3600;
 const CHANENLS_REFETCH_RETRY_INTERVAL_SECONDS: u64 = 5;
 
 type TwitchClient<C> = TwitchIRCClient<SecureTCPTransport, C>;
+
+#[derive(Debug)]
+pub enum BotMessage {
+    JoinChannels(Vec<String>),
+    PartChannels(Vec<String>),
+}
 
 static MESSAGES_RECEIVED_COUNTERS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(

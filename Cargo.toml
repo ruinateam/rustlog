@@ -1,23 +1,11 @@
-[workspace]
-members = ["crates/*"]
-# Plain `cargo test`, `cargo clippy` and so on cover every crate.
-default-members = [".", "crates/*"]
-resolver = "3"
-
-[workspace.package]
+[package]
+name = "rustlog"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
 publish = false
 
-[workspace.dependencies]
-rustlog-app = { path = "crates/app" }
-rustlog-domain = { path = "crates/domain" }
-rustlog-storage = { path = "crates/storage" }
-rustlog-tools = { path = "crates/tools" }
-rustlog-twitch = { path = "crates/twitch" }
-rustlog-web = { path = "crates/web" }
-
+[dependencies]
 aide = { version = "0.15.0", features = [
     "axum",
     "axum-json",
@@ -55,7 +43,7 @@ reqwest = { version = "0.13.5", features = [
 ], default-features = false }
 rust-embed = { version = "8.0.0", features = [
     "interpolate-folder-path",
-] }
+], optional = true }
 schemars = { version = "0.9", features = ["chrono04"] }
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = { version = "1.0.105", features = ["preserve_order"] }
@@ -90,47 +78,17 @@ axum-prometheus = "0.10.1"
 metrics-prometheus = "0.11.2"
 axum-extra = { version = "0.12.6", features = ["typed-header"] }
 bitflags = { version = "2.5.0", features = ["serde"] }
-insta = "1.48.0"
-pretty_assertions = "1.4.0"
-tempfile = "3.27.0"
-tower = { version = "0.5.3", features = ["util"] }
-
-[workspace.lints.rust]
-unsafe_code = "forbid"
-
-# The server binary; the libraries it is built from are in crates/.
-[package]
-name = "rustlog"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-publish.workspace = true
-
-[dependencies]
-anyhow.workspace = true
-chrono.workspace = true
-clap.workspace = true
-clickhouse.workspace = true
-futures.workspace = true
-mimalloc.workspace = true
-prometheus.workspace = true
-rustlog-app.workspace = true
-rustlog-storage.workspace = true
-rustlog-tools.workspace = true
-rustlog-twitch.workspace = true
-rustlog-web.workspace = true
-serde_json.workspace = true
-tokio.workspace = true
-tracing.workspace = true
-twitch-irc.workspace = true
 
 [features]
 # Compile the built web frontend (`web/dist`) into the binary. Without it a
 # placeholder page is served, so the backend builds without a Node toolchain.
-embed-frontend = ["rustlog-web/embed-frontend"]
+embed-frontend = ["dep:rust-embed"]
 
-[lints]
-workspace = true
+[dev-dependencies]
+insta = "1.48.0"
+pretty_assertions = "1.4.0"
+tempfile = "3.27.0"
+tower = { version = "0.5.3", features = ["util"] }
 
 # Line tables keep file and line numbers in backtraces; full debug info
 # mostly bloats target/ and slows down linking. Dependencies get none.

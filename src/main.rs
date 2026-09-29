@@ -1,5 +1,4 @@
 mod args;
-mod bot;
 
 use anyhow::{Context, anyhow};
 use args::{Args, Command};
@@ -8,14 +7,18 @@ use futures::future::try_join_all;
 #[cfg(unix)]
 use futures::{StreamExt, stream::FuturesUnordered};
 use mimalloc::MiMalloc;
-use rustlog_app::{
-    App,
+use rustlog::{
+    app::App,
+    bot,
     config::Config,
     logging::{self, LoggingConfig},
     services::{sully::SullyGnome, tiers::Tiers},
+    state::OperationalState,
+    storage::{setup_db, writer::create_writer},
+    tools,
+    twitch::Twitch,
+    web,
 };
-use rustlog_storage::{setup_db, state::OperationalState, writer::create_writer};
-use rustlog_twitch::Twitch;
 use std::{
     fs,
     path::Path,
@@ -60,19 +63,17 @@ async fn main() -> anyhow::Result<()> {
         db = db.with_password(password);
     }
 
-    setup_db(&db, &config.clickhouse_db, &config.legacy_state())
+    setup_db(&db, &config.clickhouse_db, &config)
         .await
         .context("could not run DB migrations")?;
 
     match args.subcommand {
         None => run(config, db).await,
         Some(Command::Openapi { .. }) => unreachable!("handled before loading the config"),
-        Some(Command::Migrate(options)) => rustlog_tools::migrate::run(db, options).await,
-        Some(Command::Mirror(options)) => rustlog_tools::mirror::run(db, options).await,
-        Some(Command::FillMissing(options)) => rustlog_tools::fill_missing::run(db, options).await,
-        Some(Command::CleanupDuplicateIds(options)) => {
-            rustlog_tools::duplicates::run(db, options).await
-        }
+        Some(Command::Migrate(options)) => tools::migrate::run(db, options).await,
+        Some(Command::Mirror(options)) => tools::mirror::run(db, options).await,
+        Some(Command::FillMissing(options)) => tools::fill_missing::run(db, options).await,
+        Some(Command::CleanupDuplicateIds(options)) => tools::duplicates::run(db, options).await,
     }
 }
 
@@ -125,7 +126,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
         shutdown_rx.clone(),
         bot_rx,
     ));
-    let mut web_handle = tokio::spawn(rustlog_web::run(app, shutdown_rx.clone(), bot_tx));
+    let mut web_handle = tokio::spawn(web::run(app, shutdown_rx.clone(), bot_tx));
 
     tokio::select! {
         // Tasks stop soon after a shutdown signal, so check the signal first:
@@ -166,7 +167,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
 }
 
 fn write_openapi(out_dir: &Path) -> anyhow::Result<()> {
-    let api = rustlog_web::api();
+    let api = web::api();
     fs::create_dir_all(out_dir)
         .with_context(|| format!("could not create {}", out_dir.display()))?;
 

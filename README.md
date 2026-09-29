@@ -68,31 +68,16 @@ just build
 # Форматирование, clippy, тесты, аудит зависимостей и актуальность OpenAPI-спек
 just check
 
-# Integration-тесты HTTP API и служебных команд на локальном ClickHouse (нужен .env, как для docker-compose.dev.yml)
+# Integration-тесты HTTP API на локальном ClickHouse (нужен .env, как для docker-compose.dev.yml)
 just test-integration
 
 # Проверка типов веб-интерфейса
 just web-check
 ```
 
-### Структура кода
-
-Бэкенд — Cargo workspace. Корневой пакет `rustlog` — это исполняемый файл (разбор аргументов, запуск сервера, чат-бот), а библиотеки лежат в [`crates/`](crates):
-
-| Крейт | Что внутри |
-| --- | --- |
-| `rustlog-domain` | типы и правила предметной области: логи, статистика, тиры, opt-out; без HTTP и ClickHouse |
-| `rustlog-storage` | ClickHouse: схема и миграции, сообщения и их IRC-форма, состояние каналов и opt-out, буфер записи, запросы |
-| `rustlog-twitch` | Twitch Helix API: токен приложения и кешированные запросы |
-| `rustlog-app` | конфигурация, логирование, сервисы (тиры, SullyGnome, Supabase) и общее состояние `App` |
-| `rustlog-web` | HTTP-сервер: замороженный legacy API, API v2, документация, метрики, встроенный веб-интерфейс |
-| `rustlog-tools` | служебные команды: `mirror`, `fill-missing`, `cleanup-duplicate-ids`, `migrate` |
-
-Зависимости идут сверху вниз: `domain` ни от чего не зависит, `web` и `tools` — от нижних крейтов, но не друг от друга. Версии внешних зависимостей заданы один раз в `[workspace.dependencies]` корневого `Cargo.toml`.
-
 ### Тесты
 
-Unit-тесты лежат рядом с кодом, а integration-тесты — в `tests/` своих крейтов: HTTP API в [`crates/web/tests/http`](crates/web/tests/http), служебные команды в [`crates/tools/tests/tools`](crates/tools/tests/tools). Тесты HTTP API устроены так:
+Unit-тесты лежат рядом с кодом в `src/`, а integration-тесты HTTP API — в [`tests/http`](tests/http):
 
 - `support/` — общий фикстур: отдельная база в ClickHouse с засеянными сообщениями, весь HTTP-стек поверх неё и построитель запросов;
 - `legacy_*.rs`, `v2.rs`, `frontend_and_docs.rs` — по одному тесту на сценарий, сгруппированные по областям API;
@@ -204,10 +189,10 @@ Dependabot раз в неделю предлагает обновления Carg
 
 Релизы ведёт [release-please](https://github.com/googleapis/release-please) по сообщениям коммитов в формате [Conventional Commits](https://www.conventionalcommits.org/ru/) (`feat:`, `fix:`, `refactor:` и т.д.):
 
-1. После каждой отправки в `main` release-please открывает или обновляет PR с новой версией (в `[workspace.package]` корневого `Cargo.toml`, в `Cargo.lock` и в OpenAPI-спеках) и записями в `CHANGELOG.md`.
+1. После каждой отправки в `main` release-please открывает или обновляет PR с новой версией в `Cargo.toml` и записями в `CHANGELOG.md`.
 2. Когда этот PR вливается, создаются тег `vX.Y.Z` и GitHub Release, а CI публикует образ с тегами версии.
 
-Пока версия ниже `1.0.0`, `feat` и ломающие изменения поднимают minor-версию, а `fix` поднимает patch. Настройки лежат в [`.github/release-please-config.json`](.github/release-please-config.json). Версии крейтов в `Cargo.lock` release-please обновляет по списку имён в этом файле, так что новый крейт нужно добавить и туда.
+Пока версия ниже `1.0.0`, `feat` и ломающие изменения поднимают minor-версию, а `fix` поднимает patch. Настройки лежат в [`.github/release-please-config.json`](.github/release-please-config.json).
 
 > [!NOTE]
 > Чтобы release-please мог открывать PR, в настройках репозитория (Settings → Actions → General → Workflow permissions) должна быть включена опция «Allow GitHub Actions to create and approve pull requests».

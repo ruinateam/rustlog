@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use rustlog_tools::{
+use rustlog::tools::{
     duplicates::CleanupDuplicateIdsOptions, fill_missing::FillMissingOptions,
     migrate::MigrateOptions, mirror::MirrorOptions,
 };

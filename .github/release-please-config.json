@@ -3,13 +3,11 @@
   "bootstrap-sha": "4f2dbf033925c9f9e5e2e05d33ff9e64700b4972",
   "packages": {
     ".": {
-      "release-type": "simple",
+      "release-type": "rust",
       "package-name": "rustlog",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
       "extra-files": [
-        { "type": "toml", "path": "Cargo.toml", "jsonpath": "$.workspace.package.version" },
-        { "type": "toml", "path": "Cargo.lock", "jsonpath": "$.package[?(@.name.value === 'rustlog' || @.name.value === 'rustlog-app' || @.name.value === 'rustlog-domain' || @.name.value === 'rustlog-storage' || @.name.value === 'rustlog-tools' || @.name.value === 'rustlog-twitch' || @.name.value === 'rustlog-web')].version" },
         { "type": "json", "path": "docs/openapi/legacy.json", "jsonpath": "$.info.version" },
         { "type": "json", "path": "docs/openapi/v2.json", "jsonpath": "$.info.version" }
       ],
