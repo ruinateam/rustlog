@@ -3,10 +3,6 @@ source: tests/tools/mirror.rs
 expression: test_db.messages().await
 ---
 2026-03-01 07:00:00.000 00000000-0000-4000-8000-000000000001 #testchan(11111) alice(22222) "Alice" color=Some(16711680) badges=["subscriber/12", "premium/1"]: hello
-2026-03-01 07:00:00.000 00000000-0000-4000-8000-000000000001 #testchan(11111) alice(22222) "Alice" color=Some(16711680) badges=["subscriber/12", "premium/1"]: hello
-2026-03-01 08:30:00.500 00000000-0000-4000-8000-000000000002 #testchan(11111) bob(33333) "Bob" color=None badges=[]: hi alice
 2026-03-01 08:30:00.500 00000000-0000-4000-8000-000000000002 #testchan(11111) bob(33333) "Bob" color=None badges=[]: hi alice
 2026-03-01 10:00:00.000 00000000-0000-4000-8000-000000000005 #testchan(11111) bob(33333) "Bob" color=None badges=[]: id in tags
-2026-03-01 10:00:00.000 00000000-0000-4000-8000-000000000005 #testchan(11111) bob(33333) "Bob" color=None badges=[]: id in tags
-2026-03-02 06:15:00.000 00000000-0000-4000-8000-000000000006 #testchan(11111) bob(33333) "Bob" color=None badges=[]: good morning
 2026-03-02 06:15:00.000 00000000-0000-4000-8000-000000000006 #testchan(11111) bob(33333) "Bob" color=None badges=[]: good morning

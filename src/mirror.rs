@@ -838,13 +838,13 @@ async fn fetch_existing_ids(
     start_ms: u64,
     end_ms: u64,
 ) -> anyhow::Result<Vec<Uuid>> {
-    let esc = channel_id.replace('\'', "\\'");
+    // A bare number compared with a DateTime64 counts seconds, not
+    // milliseconds.
     let sql = format!(
-        "SELECT id FROM {} \
-         WHERE channel_id = '{}' \
-           AND timestamp >= {} \
-           AND timestamp < {}",
-        MESSAGES_STRUCTURED_TABLE, esc, start_ms, end_ms
+        "SELECT id FROM {MESSAGES_STRUCTURED_TABLE} \
+         WHERE channel_id = ? \
+           AND timestamp >= fromUnixTimestamp64Milli(toInt64(?), 'UTC') \
+           AND timestamp < fromUnixTimestamp64Milli(toInt64(?), 'UTC')"
     );
 
     #[derive(Row, Deserialize)]
@@ -854,7 +854,12 @@ async fn fetch_existing_ids(
     }
 
     let mut ids = Vec::new();
-    let mut cursor = db.query(&sql).fetch::<ExistingId>()?;
+    let mut cursor = db
+        .query(&sql)
+        .bind(channel_id)
+        .bind(start_ms)
+        .bind(end_ms)
+        .fetch::<ExistingId>()?;
     while let Some(row) = cursor.next().await? {
         ids.push(row.id);
     }
