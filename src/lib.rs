@@ -5,6 +5,7 @@ pub mod bot;
 pub mod config;
 pub mod domain;
 pub mod irc;
+pub mod logging;
 pub mod maintenance;
 pub mod migrator;
 pub mod mirror;

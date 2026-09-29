@@ -1,3 +1,4 @@
+use crate::logging::{LogFormat, LoggingConfig};
 use anyhow::Context;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -31,6 +32,8 @@ pub struct Config {
     pub supabase_service_key: Option<String>,
     #[serde(default)]
     pub enable_tier_snapshots: bool,
+    #[serde(default)]
+    pub logging: LoggingConfig,
 }
 
 impl Config {
@@ -54,6 +57,13 @@ impl Config {
         }
         if let Ok(value) = env::var("RUSTLOG_LISTEN_ADDRESS") {
             config.listen_address = value;
+        }
+        if let Ok(value) = env::var("RUSTLOG_LOG_FORMAT") {
+            config.logging.format = match value.as_str() {
+                "text" => LogFormat::Text,
+                "json" => LogFormat::Json,
+                _ => anyhow::bail!("RUSTLOG_LOG_FORMAT must be `text` or `json`, got `{value}`"),
+            };
         }
 
         Ok(config)

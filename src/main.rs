@@ -11,6 +11,7 @@ use rustlog::{
     app::App,
     bot,
     config::Config,
+    logging::{self, LoggingConfig},
     maintenance,
     migrator::Migrator,
     mirror,
@@ -21,7 +22,7 @@ use rustlog::{
     web,
 };
 use std::{
-    env, fs,
+    fs,
     path::Path,
     sync::Arc,
     time::{Duration, Instant},
@@ -33,7 +34,6 @@ use tokio::{
     time::timeout,
 };
 use tracing::{debug, info};
-use tracing_subscriber::EnvFilter;
 use twitch_irc::login::StaticLoginCredentials;
 
 const SHUTDOWN_TIMEOUT_SECONDS: u64 = 8;
@@ -43,23 +43,15 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let use_ansi = env::var("RUST_LOG_ANSI")
-        .ok()
-        .and_then(|ansi| ansi.parse().ok())
-        .unwrap_or(true);
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_ansi(use_ansi)
-        .init();
-
     let args = Args::parse();
     if let Some(Command::Openapi { out_dir }) = &args.subcommand {
+        let _log_guard = logging::init(&LoggingConfig::default())?;
         return write_openapi(out_dir);
     }
 
     let config = Config::load(&args.config_path)?;
+    // Keeps the log file writer alive until `main` returns.
+    let _log_guard = logging::init(&config.logging)?;
     let mut db = clickhouse::Client::default()
         .with_url(&config.clickhouse_url)
         .with_database(&config.clickhouse_db)

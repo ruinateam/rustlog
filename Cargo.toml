@@ -56,9 +56,13 @@ tower-http = { version = "0.7.1", features = [
     "cors",
     "normalize-path",
     "compression-full",
+    "request-id",
+    "util",
 ] }
 tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+tracing-appender = "0.2.5"
+tracing-panic = "0.1.2"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 twitch-irc = { version = "6.1.2", default-features = false, features = [
     "metrics-collection",
     "transport-tcp-rustls-webpki-roots",
