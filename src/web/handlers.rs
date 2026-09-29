@@ -207,14 +207,20 @@ pub async fn get_channel_tiers_day(
 
     let year: i32 = day_path.year.parse()?;
     let month = normalize_month(day_path.month.parse()?)?;
-    let day = normalize_day(year, month, day_path.day.parse()?)?;
-    let period = TierPeriod::Day { year, month, day };
-    let tiers = compute_tiers(&app, &channel_id, channel, period, &mode_query).await?;
+    let date = parse_date(year, month, day_path.day.parse()?)?;
+    let tiers = compute_tiers(
+        &app,
+        &channel_id,
+        channel,
+        TierPeriod::Day(date),
+        &mode_query,
+    )
+    .await?;
 
     let response = TierDayResponse {
         year,
         month,
-        day,
+        day: date.day(),
         timezone: TIMEZONE,
         total_users: tiers.total_users,
         total_messages: tiers.total_messages,
@@ -322,10 +328,7 @@ pub async fn get_channel_logs_by_date(
     let LogsPathDate { year, month, day } = channel_log_params.date;
     let year: i32 = year.parse()?;
     let month = normalize_month(month.parse()?)?;
-    let day = normalize_day(year, month, day.parse()?)?;
-
-    let from = NaiveDate::from_ymd_opt(year, month, day)
-        .ok_or_else(|| Error::InvalidParam("Invalid date".to_owned()))?
+    let from = parse_date(year, month, day.parse()?)?
         .and_time(NaiveTime::default())
         .and_utc();
     let to = from
@@ -626,12 +629,7 @@ fn normalize_month(month_raw: i32) -> Result<u32> {
     }
 }
 
-fn normalize_day(year: i32, month: u32, day_raw: i32) -> Result<u32> {
-    if let Some(date) = NaiveDate::from_ymd_opt(year, month, day_raw as u32) {
-        Ok(date.day())
-    } else {
-        Err(Error::InvalidParam(format!(
-            "Invalid date: {year}-{month:02}-{day_raw:02}"
-        )))
-    }
+fn parse_date(year: i32, month: u32, day_raw: i32) -> Result<NaiveDate> {
+    NaiveDate::from_ymd_opt(year, month, day_raw as u32)
+        .ok_or_else(|| Error::InvalidParam(format!("Invalid date: {year}-{month:02}-{day_raw:02}")))
 }

@@ -1,6 +1,7 @@
 //! Chat tier tables: users ranked by how many fixed time windows they were
 //! active in, per window size.
 
+use chrono::{Datelike, NaiveDate};
 use std::collections::{HashMap, HashSet};
 
 pub const RESPONSE_LIMIT: usize = 500;
@@ -29,7 +30,7 @@ impl TierMode {
 /// A calendar period in [`TIMEZONE`].
 #[derive(Debug, Clone, Copy)]
 pub enum TierPeriod {
-    Day { year: i32, month: u32, day: u32 },
+    Day(NaiveDate),
     Month { year: i32, month: u32 },
     Year { year: i32 },
 }
@@ -37,16 +38,15 @@ pub enum TierPeriod {
 impl TierPeriod {
     pub fn year(self) -> i32 {
         match self {
-            TierPeriod::Day { year, .. }
-            | TierPeriod::Month { year, .. }
-            | TierPeriod::Year { year } => year,
+            TierPeriod::Day(date) => date.year(),
+            TierPeriod::Month { year, .. } | TierPeriod::Year { year } => year,
         }
     }
 
     /// `day`, `month` or `year`.
     pub fn scope(self) -> &'static str {
         match self {
-            TierPeriod::Day { .. } => "day",
+            TierPeriod::Day(_) => "day",
             TierPeriod::Month { .. } => "month",
             TierPeriod::Year { .. } => "year",
         }
@@ -55,7 +55,7 @@ impl TierPeriod {
     /// `YYYYMMDD`, `YYYYMM` or `YYYY`.
     pub fn key(self) -> String {
         match self {
-            TierPeriod::Day { year, month, day } => format!("{year:04}{month:02}{day:02}"),
+            TierPeriod::Day(date) => date.format("%Y%m%d").to_string(),
             TierPeriod::Month { year, month } => format!("{year:04}{month:02}"),
             TierPeriod::Year { year } => format!("{year:04}"),
         }
@@ -67,24 +67,24 @@ impl TierPeriod {
 pub struct UserWindows {
     pub user_id: String,
     pub messages: u64,
-    pub uniq_messages: u64,
-    pub w1: u64,
-    pub w5: u64,
-    pub w15: u64,
-    pub w30: u64,
-    pub w60: u64,
+    pub unique_messages: u64,
+    pub windows_1m: u64,
+    pub windows_5m: u64,
+    pub windows_15m: u64,
+    pub windows_30m: u64,
+    pub windows_60m: u64,
 }
 
 impl UserWindows {
     /// Adds another period's counts of the same user.
     pub fn add(&mut self, other: &UserWindows) {
         self.messages += other.messages;
-        self.uniq_messages += other.uniq_messages;
-        self.w1 += other.w1;
-        self.w5 += other.w5;
-        self.w15 += other.w15;
-        self.w30 += other.w30;
-        self.w60 += other.w60;
+        self.unique_messages += other.unique_messages;
+        self.windows_1m += other.windows_1m;
+        self.windows_5m += other.windows_5m;
+        self.windows_15m += other.windows_15m;
+        self.windows_30m += other.windows_30m;
+        self.windows_60m += other.windows_60m;
     }
 }
 
@@ -144,51 +144,51 @@ pub fn rank(
 ) -> RankedTiers {
     let total_users = rows_by_user.len() as u64;
     let total_messages = rows_by_user.values().map(|row| row.messages).sum();
-    let total_unique_messages = rows_by_user.values().map(|row| row.uniq_messages).sum();
+    let total_unique_messages = rows_by_user.values().map(|row| row.unique_messages).sum();
 
-    let w1_ranks = rank_window(&rows_by_user, |row| row.w1);
-    let w5_ranks = rank_window(&rows_by_user, |row| row.w5);
-    let w15_ranks = rank_window(&rows_by_user, |row| row.w15);
-    let w30_ranks = rank_window(&rows_by_user, |row| row.w30);
-    let w60_ranks = rank_window(&rows_by_user, |row| row.w60);
+    let ranks_1m = rank_window(&rows_by_user, |row| row.windows_1m);
+    let ranks_5m = rank_window(&rows_by_user, |row| row.windows_5m);
+    let ranks_15m = rank_window(&rows_by_user, |row| row.windows_15m);
+    let ranks_30m = rank_window(&rows_by_user, |row| row.windows_30m);
+    let ranks_60m = rank_window(&rows_by_user, |row| row.windows_60m);
 
-    let mut included_ids: HashSet<String> = w1_ranks.keys().cloned().collect();
-    included_ids.extend(w5_ranks.keys().cloned());
-    included_ids.extend(w15_ranks.keys().cloned());
-    included_ids.extend(w30_ranks.keys().cloned());
-    included_ids.extend(w60_ranks.keys().cloned());
+    let mut included_ids: HashSet<String> = ranks_1m.keys().cloned().collect();
+    included_ids.extend(ranks_5m.keys().cloned());
+    included_ids.extend(ranks_15m.keys().cloned());
+    included_ids.extend(ranks_30m.keys().cloned());
+    included_ids.extend(ranks_60m.keys().cloned());
 
     let mut entries = included_ids
         .into_iter()
         .filter_map(|user_id| {
             let row = rows_by_user.get(&user_id)?;
-            let w1 = w1_ranks.get(&user_id);
-            let w5 = w5_ranks.get(&user_id);
-            let w15 = w15_ranks.get(&user_id);
-            let w30 = w30_ranks.get(&user_id);
-            let w60 = w60_ranks.get(&user_id);
+            let ranked_1m = ranks_1m.get(&user_id);
+            let ranked_5m = ranks_5m.get(&user_id);
+            let ranked_15m = ranks_15m.get(&user_id);
+            let ranked_30m = ranks_30m.get(&user_id);
+            let ranked_60m = ranks_60m.get(&user_id);
 
             Some(TierEntry {
                 user_login: user_logins.get(&user_id).cloned(),
                 user_id,
                 messages: row.messages,
-                unique_messages: row.uniq_messages,
-                windows_1m: row.w1,
-                windows_5m: row.w5,
-                windows_15m: row.w15,
-                windows_30m: row.w30,
-                windows_60m: row.w60,
-                rank_1m: w1.map(|rank| rank.0),
-                tier_1m: w1.map(|rank| rank.1.to_owned()),
-                rank_5m: w5.map(|rank| rank.0),
-                tier_5m: w5.map(|rank| rank.1.to_owned()),
-                rank_15m: w15.map(|rank| rank.0),
-                tier_15m: w15.map(|rank| rank.1.to_owned()),
-                rank_30m: w30.map(|rank| rank.0),
-                tier_30m: w30.map(|rank| rank.1.to_owned()),
-                rank_60m: w60.map(|rank| rank.0),
-                tier_60m: w60.map(|rank| rank.1.to_owned()),
-                tier_score: score([w1, w5, w15, w30, w60]),
+                unique_messages: row.unique_messages,
+                windows_1m: row.windows_1m,
+                windows_5m: row.windows_5m,
+                windows_15m: row.windows_15m,
+                windows_30m: row.windows_30m,
+                windows_60m: row.windows_60m,
+                rank_1m: ranked_1m.map(|rank| rank.position),
+                tier_1m: ranked_1m.map(|rank| rank.tier.to_owned()),
+                rank_5m: ranked_5m.map(|rank| rank.position),
+                tier_5m: ranked_5m.map(|rank| rank.tier.to_owned()),
+                rank_15m: ranked_15m.map(|rank| rank.position),
+                tier_15m: ranked_15m.map(|rank| rank.tier.to_owned()),
+                rank_30m: ranked_30m.map(|rank| rank.position),
+                tier_30m: ranked_30m.map(|rank| rank.tier.to_owned()),
+                rank_60m: ranked_60m.map(|rank| rank.position),
+                tier_60m: ranked_60m.map(|rank| rank.tier.to_owned()),
+                tier_score: score([ranked_1m, ranked_5m, ranked_15m, ranked_30m, ranked_60m]),
             })
         })
         .collect::<Vec<_>>();
@@ -204,10 +204,17 @@ pub fn rank(
     }
 }
 
+/// A user's place among all users for one window size.
+struct WindowRank {
+    /// 1-based.
+    position: u32,
+    tier: &'static str,
+}
+
 fn rank_window(
     rows_by_user: &HashMap<String, UserWindows>,
     value: impl Fn(&UserWindows) -> u64,
-) -> HashMap<String, (u32, &'static str)> {
+) -> HashMap<String, WindowRank> {
     let mut rows = rows_by_user.values().collect::<Vec<_>>();
     rows.sort_by(|left, right| {
         value(right)
@@ -219,7 +226,8 @@ fn rank_window(
         .enumerate()
         .filter_map(|(index, row)| {
             let position = (index + 1) as u32;
-            tier_for_position(position).map(|tier| (row.user_id.clone(), (position, tier)))
+            tier_for_position(position)
+                .map(|tier| (row.user_id.clone(), WindowRank { position, tier }))
         })
         .collect()
 }
@@ -253,11 +261,11 @@ fn tier_value(tier: &str) -> u8 {
     }
 }
 
-fn score(ranks: [Option<&(u32, &'static str)>; 5]) -> u32 {
+fn score(ranks: [Option<&WindowRank>; 5]) -> u32 {
     ranks
         .into_iter()
         .flatten()
-        .map(|(_, tier)| u32::from(tier_value(tier)))
+        .map(|rank| u32::from(tier_value(rank.tier)))
         .sum()
 }
 
@@ -285,12 +293,12 @@ mod tests {
         UserWindows {
             user_id: user_id.to_owned(),
             messages: windows,
-            uniq_messages: windows,
-            w1: windows,
-            w5: windows,
-            w15: windows,
-            w30: windows,
-            w60: windows,
+            unique_messages: windows,
+            windows_1m: windows,
+            windows_5m: windows,
+            windows_15m: windows,
+            windows_30m: windows,
+            windows_60m: windows,
         }
     }
 

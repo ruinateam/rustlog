@@ -1,162 +1,180 @@
-//! Per-user activity windows behind tier tables.
+//! Per-user activity windows behind tier tables, counted in Moscow time.
 
 use super::ACTIVE_USER_OPT_OUT_PREDICATE;
-use crate::{domain::tiers::UserWindows, Result};
+use crate::{
+    domain::{logs::TimeRange, tiers::UserWindows},
+    Result,
+};
+use chrono::NaiveDate;
 use clickhouse::{Client, Row};
 use serde::Deserialize;
-use std::collections::HashMap;
 
-#[derive(Clone, Deserialize, Row)]
-pub struct WindowsAggRow {
-    pub user_id: String,
-    pub messages: u64,
-    pub uniq_messages: u64,
-    pub w1: u64,
-    pub w5: u64,
-    pub w15: u64,
-    pub w30: u64,
-    pub w60: u64,
+/// A calendar day or month in Moscow time.
+#[derive(Debug, Clone, Copy)]
+pub enum CalendarPeriod {
+    Day(NaiveDate),
+    Month { year: i32, month: u32 },
 }
 
-#[derive(Clone)]
-pub struct WindowsAgg {
-    pub messages: u64,
-    pub uniq_messages: u64,
-    pub w1: u64,
-    pub w5: u64,
-    pub w15: u64,
-    pub w30: u64,
-    pub w60: u64,
+impl CalendarPeriod {
+    /// SQL condition on the Moscow date of `timestamp`, bound to
+    /// [`Self::sql_date`].
+    fn sql_condition(self) -> &'static str {
+        match self {
+            CalendarPeriod::Day(_) => {
+                "toDate(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = toDate(?)"
+            }
+            CalendarPeriod::Month { .. } => {
+                "toStartOfMonth(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = toDate(?)"
+            }
+        }
+    }
+
+    /// The day, or the first day of the month, as `YYYY-MM-DD`.
+    fn sql_date(self) -> String {
+        match self {
+            CalendarPeriod::Day(date) => date.format("%Y-%m-%d").to_string(),
+            CalendarPeriod::Month { year, month } => format!("{year:04}-{month:02}-01"),
+        }
+    }
 }
 
-impl From<WindowsAggRow> for UserWindows {
-    fn from(row: WindowsAggRow) -> Self {
+/// Which messages of the period count, relative to stream intervals.
+#[derive(Debug, Clone, Copy)]
+pub enum StreamFilter<'a> {
+    All,
+    DuringStreams(&'a [TimeRange]),
+    OutsideStreams(&'a [TimeRange]),
+}
+
+/// Counts every user's messages and active 1, 5, 15, 30 and 60 minute
+/// windows in a period. Users without any counted message are left out.
+pub async fn user_windows(
+    db: &Client,
+    channel_id: &str,
+    period: CalendarPeriod,
+    filter: StreamFilter<'_>,
+) -> Result<Vec<UserWindows>> {
+    let rows = match filter {
+        StreamFilter::All => all_windows(db, channel_id, period).await?,
+        // Without streams nothing happened during one and everything outside.
+        StreamFilter::DuringStreams([]) => Vec::new(),
+        StreamFilter::OutsideStreams([]) => all_windows(db, channel_id, period).await?,
+        StreamFilter::DuringStreams(streams) => {
+            windows_relative_to_streams(db, channel_id, period, streams, true).await?
+        }
+        StreamFilter::OutsideStreams(streams) => {
+            windows_relative_to_streams(db, channel_id, period, streams, false).await?
+        }
+    };
+
+    Ok(rows.into_iter().map(UserWindows::from).collect())
+}
+
+#[derive(Deserialize, Row)]
+struct UserWindowsRow {
+    user_id: String,
+    messages: u64,
+    unique_messages: u64,
+    windows_1m: u64,
+    windows_5m: u64,
+    windows_15m: u64,
+    windows_30m: u64,
+    windows_60m: u64,
+}
+
+impl From<UserWindowsRow> for UserWindows {
+    fn from(row: UserWindowsRow) -> Self {
         Self {
             user_id: row.user_id,
             messages: row.messages,
-            uniq_messages: row.uniq_messages,
-            w1: row.w1,
-            w5: row.w5,
-            w15: row.w15,
-            w30: row.w30,
-            w60: row.w60,
+            unique_messages: row.unique_messages,
+            windows_1m: row.windows_1m,
+            windows_5m: row.windows_5m,
+            windows_15m: row.windows_15m,
+            windows_30m: row.windows_30m,
+            windows_60m: row.windows_60m,
         }
     }
 }
 
-impl WindowsAgg {
-    pub fn into_user_windows(self, user_id: String) -> UserWindows {
-        UserWindows {
+async fn all_windows(
+    db: &Client,
+    channel_id: &str,
+    period: CalendarPeriod,
+) -> Result<Vec<UserWindowsRow>> {
+    let period_condition = period.sql_condition();
+    let query = format!(
+        "
+        SELECT
             user_id,
-            messages: self.messages,
-            uniq_messages: self.uniq_messages,
-            w1: self.w1,
-            w5: self.w5,
-            w15: self.w15,
-            w30: self.w30,
-            w60: self.w60,
-        }
-    }
-}
+            count() AS messages,
+            uniqExact(text) AS unique_messages,
+            countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 1 MINUTE))  AS windows_1m,
+            countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 5 MINUTE))  AS windows_5m,
+            countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 15 MINUTE)) AS windows_15m,
+            countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 30 MINUTE)) AS windows_30m,
+            countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 60 MINUTE)) AS windows_60m
+         FROM message_structured
+         WHERE channel_id = ?
+           AND user_id != ''
+           AND {ACTIVE_USER_OPT_OUT_PREDICATE}
+           AND {period_condition}
+        GROUP BY user_id
+        HAVING windows_1m > 0 OR windows_5m > 0 OR windows_15m > 0 OR windows_30m > 0 OR windows_60m > 0
+        ORDER BY windows_1m DESC
+        "
+    );
 
-pub async fn get_day_windows(
-    db: &Client,
-    channel_id: &str,
-    yyyymmdd: i32,
-) -> Result<Vec<WindowsAggRow>> {
-    // Aggregate fixed windows in MSK (Europe/Moscow) for a specific day.
-    let rows = db
-        .query(&format!(
-            "
-            SELECT
-                user_id,
-                count() AS messages,
-                uniqExact(text) AS uniq_messages,
-                countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 1 MINUTE))  AS w1,
-                countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 5 MINUTE))  AS w5,
-                countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 15 MINUTE)) AS w15,
-                countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 30 MINUTE)) AS w30,
-                countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 60 MINUTE)) AS w60
-             FROM message_structured
-             WHERE channel_id = ?
-               AND user_id != ''
-               AND {ACTIVE_USER_OPT_OUT_PREDICATE}
-               AND toYYYYMMDD(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
-            GROUP BY user_id
-            HAVING w1 > 0 OR w5 > 0 OR w15 > 0 OR w30 > 0 OR w60 > 0
-            ORDER BY w1 DESC
-            ",
-        ))
+    Ok(db
+        .query(&query)
         .bind(channel_id)
-        .bind(yyyymmdd)
-        .fetch_all::<WindowsAggRow>()
-        .await?;
-
-    Ok(rows)
+        .bind(period.sql_date())
+        .fetch_all()
+        .await?)
 }
 
-pub async fn get_day_windows_with_ranges(
+/// Counts only messages sent during (`during = true`) or outside the given
+/// stream intervals, which must not be empty.
+async fn windows_relative_to_streams(
     db: &Client,
     channel_id: &str,
-    yyyymmdd: i32,
-    ranges: &[(i64, i64)],
-    mode_online: bool,
-) -> Result<HashMap<String, WindowsAgg>> {
-    if ranges.is_empty() {
-        if mode_online {
-            return Ok(HashMap::new());
-        }
-
-        return Ok(get_day_windows(db, channel_id, yyyymmdd)
-            .await?
-            .into_iter()
-            .map(|row| {
-                (
-                    row.user_id,
-                    WindowsAgg {
-                        messages: row.messages,
-                        uniq_messages: row.uniq_messages,
-                        w1: row.w1,
-                        w5: row.w5,
-                        w15: row.w15,
-                        w30: row.w30,
-                        w60: row.w60,
-                    },
-                )
-            })
-            .collect());
-    }
-
-    let ranges_sql = ranges
+    period: CalendarPeriod,
+    streams: &[TimeRange],
+    during: bool,
+) -> Result<Vec<UserWindowsRow>> {
+    let streams_sql = streams
         .iter()
-        .map(|(s, e)| {
+        .map(|stream| {
             format!(
                 "(toDateTime64({}, 3, 'Europe/Moscow'), toDateTime64({}, 3, 'Europe/Moscow'))",
-                *s as f64 / 1000.0,
-                *e as f64 / 1000.0
+                stream.from.timestamp_millis() as f64 / 1000.0,
+                stream.to.timestamp_millis() as f64 / 1000.0
             )
         })
         .collect::<Vec<_>>()
         .join(", ");
 
-    let condition = if mode_online {
+    let counted = if during {
         "arrayExists(r -> ts >= r.1 AND ts < r.2, ranges)"
     } else {
         "NOT arrayExists(r -> ts >= r.1 AND ts < r.2, ranges)"
     };
 
+    let period_condition = period.sql_condition();
+
     let query = format!(
         "
-        WITH [{ranges_sql}] AS ranges
+        WITH [{streams_sql}] AS ranges
         SELECT
             user_id,
-            countIf({cond}) AS messages,
-            uniqExactIf(text, {cond}) AS uniq_messages,
-            countDistinctIf(toStartOfInterval(ts, INTERVAL 1 MINUTE), {cond}) AS w1,
-            countDistinctIf(toStartOfInterval(ts, INTERVAL 5 MINUTE), {cond}) AS w5,
-            countDistinctIf(toStartOfInterval(ts, INTERVAL 15 MINUTE), {cond}) AS w15,
-            countDistinctIf(toStartOfInterval(ts, INTERVAL 30 MINUTE), {cond}) AS w30,
-            countDistinctIf(toStartOfInterval(ts, INTERVAL 60 MINUTE), {cond}) AS w60
+            countIf({counted}) AS messages,
+            uniqExactIf(text, {counted}) AS unique_messages,
+            countDistinctIf(toStartOfInterval(ts, INTERVAL 1 MINUTE), {counted}) AS windows_1m,
+            countDistinctIf(toStartOfInterval(ts, INTERVAL 5 MINUTE), {counted}) AS windows_5m,
+            countDistinctIf(toStartOfInterval(ts, INTERVAL 15 MINUTE), {counted}) AS windows_15m,
+            countDistinctIf(toStartOfInterval(ts, INTERVAL 30 MINUTE), {counted}) AS windows_30m,
+            countDistinctIf(toStartOfInterval(ts, INTERVAL 60 MINUTE), {counted}) AS windows_60m
         FROM
         (
             SELECT
@@ -167,180 +185,17 @@ pub async fn get_day_windows_with_ranges(
              WHERE channel_id = ?
                AND user_id != ''
                AND {ACTIVE_USER_OPT_OUT_PREDICATE}
-               AND toYYYYMMDD(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
+               AND {period_condition}
         )
         GROUP BY user_id
-        HAVING w1 > 0 OR w5 > 0 OR w15 > 0 OR w30 > 0 OR w60 > 0
-        ",
-        ranges_sql = ranges_sql,
-        cond = condition
-    );
-
-    let rows: Vec<WindowsAggRow> = db
-        .query(&query)
-        .bind(channel_id)
-        .bind(yyyymmdd)
-        .fetch_all()
-        .await?;
-
-    let mut map: HashMap<String, WindowsAgg> = HashMap::new();
-    for row in rows {
-        map.insert(
-            row.user_id.clone(),
-            WindowsAgg {
-                messages: row.messages,
-                uniq_messages: row.uniq_messages,
-                w1: row.w1,
-                w5: row.w5,
-                w30: row.w30,
-                w15: row.w15,
-                w60: row.w60,
-            },
-        );
-    }
-
-    Ok(map)
-}
-
-pub async fn get_month_windows(
-    db: &Client,
-    channel_id: &str,
-    yyyymm: i32,
-) -> Result<Vec<WindowsAggRow>> {
-    // Aggregate fixed windows in MSK (Europe/Moscow) for a specific month.
-    let rows = db
-        .query(&format!(
-            "
-            SELECT
-                user_id,
-                count() AS messages,
-                uniqExact(text) AS uniq_messages,
-                countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 1 MINUTE))  AS w1,
-                countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 5 MINUTE))  AS w5,
-                countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 15 MINUTE)) AS w15,
-                countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 30 MINUTE)) AS w30,
-                countDistinct(toStartOfInterval(toTimeZone(toDateTime(timestamp), 'Europe/Moscow'), INTERVAL 60 MINUTE)) AS w60
-             FROM message_structured
-             WHERE channel_id = ?
-               AND user_id != ''
-               AND {ACTIVE_USER_OPT_OUT_PREDICATE}
-               AND toYYYYMM(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
-            GROUP BY user_id
-            HAVING w1 > 0 OR w5 > 0 OR w15 > 0 OR w30 > 0 OR w60 > 0
-            ORDER BY w1 DESC
-            ",
-        ))
-        .bind(channel_id)
-        .bind(yyyymm)
-        .fetch_all::<WindowsAggRow>()
-        .await?;
-
-    Ok(rows)
-}
-
-pub async fn get_month_windows_with_ranges(
-    db: &Client,
-    channel_id: &str,
-    yyyymm: i32,
-    ranges: &[(i64, i64)],
-    mode_online: bool,
-) -> Result<HashMap<String, WindowsAgg>> {
-    if ranges.is_empty() {
-        if mode_online {
-            return Ok(HashMap::new());
-        }
-
-        return Ok(get_month_windows(db, channel_id, yyyymm)
-            .await?
-            .into_iter()
-            .map(|row| {
-                (
-                    row.user_id,
-                    WindowsAgg {
-                        messages: row.messages,
-                        uniq_messages: row.uniq_messages,
-                        w1: row.w1,
-                        w5: row.w5,
-                        w15: row.w15,
-                        w30: row.w30,
-                        w60: row.w60,
-                    },
-                )
-            })
-            .collect());
-    }
-
-    let ranges_sql = ranges
-        .iter()
-        .map(|(s, e)| {
-            format!(
-                "(toDateTime64({}, 3, 'Europe/Moscow'), toDateTime64({}, 3, 'Europe/Moscow'))",
-                *s as f64 / 1000.0,
-                *e as f64 / 1000.0
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let condition = if mode_online {
-        "arrayExists(r -> ts >= r.1 AND ts < r.2, ranges)"
-    } else {
-        "NOT arrayExists(r -> ts >= r.1 AND ts < r.2, ranges)"
-    };
-
-    let query = format!(
+        HAVING windows_1m > 0 OR windows_5m > 0 OR windows_15m > 0 OR windows_30m > 0 OR windows_60m > 0
         "
-        WITH [{ranges_sql}] AS ranges
-        SELECT
-            user_id,
-            countIf({cond}) AS messages,
-            uniqExactIf(text, {cond}) AS uniq_messages,
-            countDistinctIf(toStartOfInterval(ts, INTERVAL 1 MINUTE), {cond}) AS w1,
-            countDistinctIf(toStartOfInterval(ts, INTERVAL 5 MINUTE), {cond}) AS w5,
-            countDistinctIf(toStartOfInterval(ts, INTERVAL 15 MINUTE), {cond}) AS w15,
-            countDistinctIf(toStartOfInterval(ts, INTERVAL 30 MINUTE), {cond}) AS w30,
-            countDistinctIf(toStartOfInterval(ts, INTERVAL 60 MINUTE), {cond}) AS w60
-        FROM
-        (
-            SELECT
-                user_id,
-                toTimeZone(timestamp, 'Europe/Moscow') AS ts,
-                text
-             FROM message_structured
-             WHERE channel_id = ?
-               AND user_id != ''
-               AND {ACTIVE_USER_OPT_OUT_PREDICATE}
-               AND toYYYYMM(toTimeZone(toDateTime(timestamp), 'Europe/Moscow')) = ?
-        )
-        GROUP BY user_id
-        HAVING w1 > 0 OR w5 > 0 OR w15 > 0 OR w30 > 0 OR w60 > 0
-        ",
-        ranges_sql = ranges_sql,
-        cond = condition
     );
 
-    let rows: Vec<WindowsAggRow> = db
+    Ok(db
         .query(&query)
         .bind(channel_id)
-        .bind(yyyymm)
+        .bind(period.sql_date())
         .fetch_all()
-        .await?;
-
-    let mut map = HashMap::new();
-    for row in rows {
-        map.insert(
-            row.user_id.clone(),
-            WindowsAgg {
-                messages: row.messages,
-                uniq_messages: row.uniq_messages,
-                w1: row.w1,
-                w5: row.w5,
-                w15: row.w15,
-                w30: row.w30,
-                w60: row.w60,
-            },
-        );
-    }
-
-    Ok(map)
+        .await?)
 }
