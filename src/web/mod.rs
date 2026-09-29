@@ -41,8 +41,12 @@ use std::{
 };
 use tokio::{net::TcpListener, sync::mpsc::Sender};
 use tower_http::{
-    CompressionLevel, compression::CompressionLayer, cors::CorsLayer,
-    normalize_path::NormalizePath, trace::TraceLayer,
+    CompressionLevel,
+    compression::CompressionLayer,
+    cors::CorsLayer,
+    normalize_path::NormalizePath,
+    request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    trace::TraceLayer,
 };
 use tracing::{debug, info};
 
@@ -107,7 +111,10 @@ pub fn service(
         .layer(Extension(admin_api_key))
         .with_state(app)
         .layer(CorsLayer::permissive())
-        .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
+        .layer(CompressionLayer::new().quality(CompressionLevel::Fastest))
+        // Outermost, so the request id exists before the trace span is made.
+        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));
     NormalizePath::trim_trailing_slash(router)
 }
 
@@ -345,7 +352,8 @@ pub fn api() -> Api {
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(trace_layer::make_span_with)
-                .on_response(trace_layer::on_response),
+                .on_response(trace_layer::on_response)
+                .on_failure(trace_layer::on_failure),
         )
         // The default `axum_http_*` metric names are kept on purpose: older
         // axum-prometheus ignored a custom prefix, so deployed dashboards use
