@@ -11,14 +11,10 @@ use super::{
 };
 use crate::{
     app::App,
-    db::stream::LogsStream,
-    db::{
-        self, read_available_channel_logs, read_available_user_logs, read_channel,
-        read_random_channel_line, read_random_user_line, read_user,
-    },
     domain::tiers::{RankedTiers, TierPeriod, TIMEZONE},
     error::Error,
     services::{self, sully},
+    storage::{availability, logs, stats, stream::LogsStream},
     web::schema::{LogRangeParams, LogsPathDate, SullyStreamsResponse, TierModeQuery},
     Result,
 };
@@ -98,7 +94,8 @@ pub async fn get_channel_logs(
         let logs = get_channel_logs_inner(&app, &channel_id, logs_params, range).await?;
         Ok(logs.into_response())
     } else {
-        let available_logs = read_available_channel_logs(&app.db, &channel_id).await?;
+        let available_logs =
+            availability::read_available_channel_logs(&app.db, &channel_id).await?;
         let latest_log = AvailableLogDate::from(*available_logs.first().ok_or(Error::NotFound)?);
 
         let mut new_uri = format!("/{channel_id_type}/{channel}/{latest_log}");
@@ -126,7 +123,7 @@ pub async fn get_channel_stats(
     app.check_opted_out(&channel_id, None)?;
 
     let (message_count, stats_rows) =
-        db::get_channel_stats(&app.db, &channel_id, range_params.time_range()).await?;
+        stats::get_channel_stats(&app.db, &channel_id, range_params.time_range()).await?;
 
     let user_ids = stats_rows.iter().map(|row| row.user_id.clone()).collect();
     let mut users = app.get_users(user_ids, vec![], false).await?;
@@ -160,7 +157,7 @@ pub async fn get_user_stats(
         .await?
         .into_values()
         .next();
-    let stats = db::get_user_stats(
+    let stats = stats::get_user_stats(
         &app.db,
         &channel_id,
         user_id,
@@ -346,7 +343,7 @@ async fn get_channel_logs_inner(
 ) -> Result<impl IntoApiResponse> {
     app.check_opted_out(channel_id, None)?;
 
-    let stream = read_channel(
+    let stream = logs::read_channel(
         &app.db,
         channel_id,
         params.query(),
@@ -381,7 +378,8 @@ pub async fn get_user_logs(
         let logs = get_user_logs_inner(&app, &channel_id, &user_id, logs_params, range).await?;
         Ok(logs.into_response())
     } else {
-        let available_logs = read_available_user_logs(&app.db, &channel_id, &user_id).await?;
+        let available_logs =
+            availability::read_available_user_logs(&app.db, &channel_id, &user_id).await?;
         let latest_log = AvailableLogDate::from(*available_logs.first().ok_or(Error::NotFound)?);
 
         let UserLogPathParams {
@@ -432,7 +430,7 @@ async fn get_user_logs_inner(
     logs_params: LogsParams,
     range: (DateTime<Utc>, DateTime<Utc>),
 ) -> Result<impl IntoApiResponse> {
-    let stream = read_user(
+    let stream = logs::read_user(
         &app.db,
         channel_id,
         user_id,
@@ -471,10 +469,10 @@ pub async fn list_available_logs(
             UserParam::User(name) => app.get_user_id_by_name(&name).await?,
         };
         app.check_opted_out(&channel_id, Some(&user_id))?;
-        read_available_user_logs(&app.db, &channel_id, &user_id).await?
+        availability::read_available_user_logs(&app.db, &channel_id, &user_id).await?
     } else {
         app.check_opted_out(&channel_id, None)?;
-        read_available_channel_logs(&app.db, &channel_id).await?
+        availability::read_available_channel_logs(&app.db, &channel_id).await?
     };
 
     if !available_logs.is_empty() {
@@ -502,7 +500,7 @@ pub async fn random_channel_line(
     };
     app.check_opted_out(&channel_id, None)?;
 
-    let random_line = read_random_channel_line(&app.db, &channel_id).await?;
+    let random_line = logs::read_random_channel_line(&app.db, &channel_id).await?;
     let stream = LogsStream::new_provided(vec![random_line])?;
 
     let logs = LogsResponse {
@@ -521,7 +519,7 @@ pub async fn random_user_line(
 
     app.check_opted_out(&channel_id, Some(&user_id))?;
 
-    let random_line = read_random_user_line(&app.db, &channel_id, &user_id).await?;
+    let random_line = logs::read_random_user_line(&app.db, &channel_id, &user_id).await?;
     let stream = LogsStream::new_provided(vec![random_line])?;
 
     let logs = LogsResponse {
@@ -541,7 +539,7 @@ pub async fn search_user_logs(
 
     app.check_opted_out(&channel_id, Some(&user_id))?;
 
-    let stream = db::search_user_logs(
+    let stream = logs::search_user_logs(
         &app.db,
         &channel_id,
         &user_id,
@@ -563,7 +561,7 @@ pub async fn get_user_name_history(
 ) -> Result<impl IntoApiResponse> {
     app.check_user_opted_out(&user_id)?;
 
-    let names: Vec<_> = db::get_user_name_history(&app.db, &user_id)
+    let names: Vec<_> = stats::get_user_name_history(&app.db, &user_id)
         .await?
         .into_iter()
         .map(PreviousName::from)

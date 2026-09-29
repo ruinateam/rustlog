@@ -4,9 +4,9 @@ use self::cache::{BadgesCache, UsersCache};
 use crate::services::sully::SullyGnome;
 use crate::{
     config::Config,
-    db::{delete_user_logs, writer::FlushBuffer},
     error::Error,
     state::OperationalState,
+    storage::{logs::delete_user_logs, writer::FlushBuffer},
     Result,
 };
 use anyhow::Context;
@@ -35,7 +35,7 @@ pub struct App {
     pub config: Arc<Config>,
     pub state: OperationalState,
     pub flush_buffer: FlushBuffer,
-    pub firehose_tx: broadcast::Sender<crate::db::schema::StructuredMessage<'static>>,
+    pub firehose_tx: broadcast::Sender<crate::storage::schema::StructuredMessage<'static>>,
 }
 
 impl App {

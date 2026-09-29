@@ -1,5 +1,5 @@
 use super::migratable::Migratable;
-use crate::db::schema::{StructuredMessage, UnstructuredMessage, MESSAGES_STRUCTURED_TABLE};
+use crate::storage::schema::{StructuredMessage, UnstructuredMessage, MESSAGES_STRUCTURED_TABLE};
 use anyhow::{bail, Context};
 use std::{
     env,

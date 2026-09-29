@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 
 use crate::{
-    db::{schema::StructuredMessage, writer::FlushBuffer},
     domain::logs::LogsQuery,
+    storage::{schema::StructuredMessage, writer::FlushBuffer},
 };
 
 #[derive(Debug)]

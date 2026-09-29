@@ -1,5 +1,5 @@
 use super::message::{BasicMessage, FullMessage, ResponseMessage};
-use crate::{db::schema::StructuredMessage, db::stream::LogsStream, Result};
+use crate::{storage::schema::StructuredMessage, storage::stream::LogsStream, Result};
 use futures::{stream::TryChunks, Future, Stream, StreamExt, TryStreamExt};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::{
@@ -128,7 +128,7 @@ impl Stream for JsonLogsStream {
 #[cfg(test)]
 mod tests {
     use super::{JsonLogsStream, JsonResponseType};
-    use crate::db::stream::LogsStream;
+    use crate::storage::stream::LogsStream;
     use futures::{executor::block_on, StreamExt};
 
     #[test]

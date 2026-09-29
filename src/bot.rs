@@ -1,7 +1,7 @@
 use crate::{
     app::App,
-    db::schema::{StructuredMessage, UnstructuredMessage},
     irc::{extract_channel_and_user_from_raw, extract_raw_timestamp},
+    storage::schema::{StructuredMessage, UnstructuredMessage},
     ShutdownRx,
 };
 use anyhow::{anyhow, Context};

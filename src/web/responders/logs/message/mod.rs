@@ -6,7 +6,7 @@ pub use full::FullMessage;
 
 use serde::Serialize;
 
-use crate::db::schema::StructuredMessage;
+use crate::storage::schema::StructuredMessage;
 
 pub trait ResponseMessage<'a>: Sized + Send + Serialize + Unpin {
     fn from_structured(msg: &'a StructuredMessage<'a>) -> anyhow::Result<Self>;

@@ -5,9 +5,9 @@ use super::{
 };
 use crate::{
     app::App,
-    db::{read_available_channel_logs, read_available_user_logs, read_user},
     domain::logs::LogsQuery,
     error::Error,
+    storage::{availability, logs},
 };
 use aide::{
     axum::{routing::get_with, ApiRouter, IntoApiResponse},
@@ -104,10 +104,10 @@ async fn availability(
 ) -> Result<impl IntoApiResponse, ApiProblem> {
     let available_logs = if let Some(user_id) = query.user_id {
         app.check_opted_out(&channel_id, Some(&user_id))?;
-        read_available_user_logs(&app.db, &channel_id, &user_id).await?
+        availability::read_available_user_logs(&app.db, &channel_id, &user_id).await?
     } else {
         app.check_opted_out(&channel_id, None)?;
-        read_available_channel_logs(&app.db, &channel_id).await?
+        availability::read_available_channel_logs(&app.db, &channel_id).await?
     };
 
     let available_logs = available_logs
@@ -174,7 +174,7 @@ async fn user_logs(
         LogFormat::Text => LogsResponseType::Text,
         LogFormat::Raw => LogsResponseType::Raw,
     };
-    let stream = read_user(
+    let stream = logs::read_user(
         &app.db,
         &channel_id,
         &user_id,

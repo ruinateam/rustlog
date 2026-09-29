@@ -15,9 +15,9 @@ use rustlog::{
     },
     bot::BotMessage,
     config::Config,
-    db::{setup_db, writer::FlushBuffer},
     services::sully::SullyGnome,
     state::OperationalState,
+    storage::{setup_db, writer::FlushBuffer},
     web,
 };
 use serde_json::json;

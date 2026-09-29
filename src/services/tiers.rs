@@ -3,11 +3,11 @@
 use super::sully::Stream;
 use crate::{
     app::App,
-    db::{
+    domain::tiers::{filter_bots, rank, RankedTiers, TierMode, TierPeriod, UserWindows},
+    storage::tiers::{
         get_day_windows, get_day_windows_with_ranges, get_month_windows,
         get_month_windows_with_ranges,
     },
-    domain::tiers::{filter_bots, rank, RankedTiers, TierMode, TierPeriod, UserWindows},
     Result,
 };
 use chrono::{DateTime, Days, FixedOffset, Months, NaiveDate, NaiveTime};

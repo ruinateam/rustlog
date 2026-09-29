@@ -588,7 +588,7 @@ fn extract_message_text(mut message_text: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{MessageType, StructuredMessage, UnstructuredMessage};
-    use crate::db::schema::MessageFlags;
+    use crate::storage::schema::MessageFlags;
     use pretty_assertions::assert_eq;
     use tmi::{IrcMessageRef, Tag};
     use uuid::Uuid;

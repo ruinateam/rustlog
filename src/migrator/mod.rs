@@ -2,10 +2,10 @@ mod reader;
 
 use self::reader::{LogsReader, COMPRESSED_CHANNEL_FILE, UNCOMPRESSED_CHANNEL_FILE};
 use crate::{
-    db::schema::{StructuredMessage, UnstructuredMessage, MESSAGES_STRUCTURED_TABLE},
     irc::{extract_raw_timestamp, extract_user_id},
     migrator::reader::ChannelLogDateMap,
     state::OperationalState,
+    storage::schema::{StructuredMessage, UnstructuredMessage, MESSAGES_STRUCTURED_TABLE},
 };
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, Datelike, TimeZone, Utc};

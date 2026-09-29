@@ -1,5 +1,5 @@
 use super::schema::StructuredMessage;
-use crate::{db::schema::MESSAGES_STRUCTURED_TABLE, state::OperationalState, ShutdownRx};
+use crate::{state::OperationalState, storage::schema::MESSAGES_STRUCTURED_TABLE, ShutdownRx};
 use anyhow::{anyhow, Context};
 use clickhouse::Client;
 use lazy_static::lazy_static;

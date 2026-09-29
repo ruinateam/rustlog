@@ -9,7 +9,7 @@ use self::message::FullMessage;
 use self::{
     json_stream::JsonLogsStream, ndjson_stream::NdJsonLogsStream, text_stream::TextLogsStream,
 };
-use crate::db::stream::LogsStream;
+use crate::storage::stream::LogsStream;
 use aide::OperationOutput;
 use axum::{
     body::Body,

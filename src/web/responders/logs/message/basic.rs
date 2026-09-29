@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use std::{borrow::Cow, collections::HashMap};
 
-use crate::db::schema::StructuredMessage;
+use crate::storage::schema::StructuredMessage;
 
 use super::ResponseMessage;
 
@@ -38,7 +38,7 @@ impl<'a> ResponseMessage<'a> for BasicMessage<'a> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        db::schema::{StructuredMessage, UnstructuredMessage},
+        storage::schema::{StructuredMessage, UnstructuredMessage},
         web::responders::logs::message::ResponseMessage,
     };
 

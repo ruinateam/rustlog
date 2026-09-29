@@ -14,12 +14,12 @@ use rustlog::{
     },
     bot,
     config::Config,
-    db::{setup_db, writer::create_writer},
     maintenance,
     migrator::Migrator,
     mirror,
     services::sully::SullyGnome,
     state::OperationalState,
+    storage::{setup_db, writer::create_writer},
     web, ShutdownRx,
 };
 use std::{
