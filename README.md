@@ -112,7 +112,7 @@ docker run --rm -p 8026:8026 \
 ./target/release/rustlog --config /path/to/config.json
 ```
 
-Для контейнеров сетевые поля переопределяются переменными окружения - `RUSTLOG_CLICKHOUSE_URL`, `RUSTLOG_CLICKHOUSE_DB`, `RUSTLOG_CLICKHOUSE_USERNAME`, `RUSTLOG_CLICKHOUSE_PASSWORD`, `RUSTLOG_LISTEN_ADDRESS`.
+Для контейнеров сетевые поля переопределяются переменными окружения - `RUSTLOG_CLICKHOUSE_URL`, `RUSTLOG_CLICKHOUSE_DB`, `RUSTLOG_CLICKHOUSE_USERNAME`, `RUSTLOG_CLICKHOUSE_PASSWORD`, `RUSTLOG_LISTEN_ADDRESS`, а формат логов — `RUSTLOG_LOG_FORMAT` (`text` или `json`). Настройки логирования, включая запись в файлы с ротацией, описаны в [CONFIG.md](./docs/CONFIG.md#поля) (секция `logging`).
 
 Состояние каналов и opt-out после первой миграции хранится в ClickHouse. На один деплой должен быть только один бэкенд, который его меняет (смотрите [CONFIG.md](./docs/CONFIG.md#состояние-каналов-и-opt-out)).
 
