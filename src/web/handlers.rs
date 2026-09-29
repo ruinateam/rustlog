@@ -12,14 +12,14 @@ use super::{
 use crate::{
     app::App,
     db::{
-        self, get_day_windows, get_day_windows_with_ranges, get_month_windows,
-        get_month_windows_with_ranges, read_available_channel_logs, read_available_user_logs,
-        read_channel, read_random_channel_line, read_random_user_line, read_user, WindowsAggRow,
+        self, read_available_channel_logs, read_available_user_logs, read_channel,
+        read_random_channel_line, read_random_user_line, read_user,
     },
+    domain::tiers::{RankedTiers, TierPeriod, TIMEZONE},
     error::Error,
     logs::{schema::LogRangeParams, stream::LogsStream},
-    supabase::{write_tier_snapshot, SupabaseConfig, TierSnapshotPayload},
-    web::schema::{LogsPathDate, SullyStreamEntry, SullyStreamsResponse, TierMode, TierModeQuery},
+    services::{self, sully},
+    web::schema::{LogsPathDate, SullyStreamsResponse, TierModeQuery},
     Result,
 };
 use aide::axum::IntoApiResponse;
@@ -29,19 +29,10 @@ use axum::{
     Json,
 };
 use axum_extra::{headers::CacheControl, TypedHeader};
-use chrono::offset::FixedOffset;
 use chrono::{DateTime, Datelike, Days, Months, NaiveDate, NaiveTime, Utc};
 use rand::{distr::Alphanumeric, rng, Rng};
-use reqwest::Client as HttpClient;
-use serde::Deserialize;
-use serde_json;
-use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::PathBuf;
 use std::time::Duration;
-use tracing::{debug, error, warn};
-// use std::process::Command; // not used
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
+use tracing::debug;
 
 pub async fn get_channels(app: State<App>) -> Result<impl IntoApiResponse> {
     let channel_ids = app.state.channel_ids();
@@ -181,177 +172,30 @@ pub async fn get_user_stats(
     Ok(Json(UserLogsStats::from(stats)))
 }
 
-fn build_http_client() -> Result<HttpClient> {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_static("rustlog/1.0 (https://localhost)"),
-    );
-    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-    let client = HttpClient::builder()
-        .default_headers(headers)
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|_| Error::Internal)?;
-    Ok(client)
-}
-
-async fn load_sully_streams(channel: &str, year: i32) -> Option<SullyStreamsResponse> {
-    // Try live fetch first; on failure fall back to cache.
-    if let Ok(http) = build_http_client() {
-        match fetch_sully_id(&http, channel).await {
-            Ok(internal_id) => match fetch_sully_streams(&http, &internal_id, year).await {
-                Ok((_, data)) => {
-                    let resp = SullyStreamsResponse {
-                        channel: channel.to_string(),
-                        year,
-                        total: data.len() as u32,
-                        streams: data.clone(),
-                    };
-                    let _ = write_sully_cache(channel, year, &resp);
-                    return Some(resp);
-                }
-                Err(e) => {
-                    error!(
-                        "sully fetch streams failed channel={} year={} err={:?}",
-                        channel, year, e
-                    );
-                }
-            },
-            Err(e) => {
-                error!(
-                    "sully fetch internal_id failed channel={} err={:?}",
-                    channel, e
-                );
-            }
-        };
-    }
-    if let Some(cached) = read_sully_cache(channel, year) {
-        warn!(
-            "sully fetch falling back to cache channel={} year={} streams={}",
-            channel,
-            year,
-            cached.streams.len()
-        );
-        Some(cached)
-    } else {
-        warn!(
-            "sully fetch failed and no cache available channel={} year={}",
-            channel, year
-        );
-        None
-    }
-}
-
 pub async fn get_channel_tiers_month(
     app: State<App>,
     Path(month_path): Path<ChannelMonthPath>,
     Query(mode_query): Query<TierModeQuery>,
 ) -> Result<impl IntoApiResponse> {
-    let channel_id = match month_path.channel_info.channel_id_type {
-        ChannelIdType::Name => {
-            app.get_user_id_by_name(&month_path.channel_info.channel)
-                .await?
-        }
-        ChannelIdType::Id => month_path.channel_info.channel.clone(),
-    };
-
+    let channel = &month_path.channel_info.channel;
+    let channel_id =
+        resolve_channel(&app, month_path.channel_info.channel_id_type, channel).await?;
     app.check_opted_out(&channel_id, None)?;
 
     let year: i32 = month_path.year.parse()?;
     let month = normalize_month(month_path.month.parse()?)?;
-    let yyyymm = year * 100 + month as i32;
-
-    let mode = mode_query.mode;
-    let bot_filter: HashSet<String> = mode_query
-        .exclude_bots
-        .iter()
-        .map(|bot| bot.to_lowercase())
-        .collect();
-
-    // Determine intervals from Sully for this month. Always try live fetch, fallback to cache.
-    let streams = load_sully_streams(&month_path.channel_info.channel, year).await;
-
-    let intervals = streams
-        .as_ref()
-        .map(|resp| intervals_for_month(year, month, &resp.streams))
-        .unwrap_or_default();
-
-    let rows = match mode {
-        TierMode::All => get_month_windows(&app.db, &channel_id, yyyymm).await?,
-        TierMode::Online => {
-            get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &intervals, true)
-                .await?
-                .into_iter()
-                .map(|(user_id, agg)| WindowsAggRow {
-                    user_id,
-                    messages: agg.messages,
-                    uniq_messages: agg.uniq_messages,
-                    w1: agg.w1,
-                    w5: agg.w5,
-                    w30: agg.w30,
-                    w15: agg.w15,
-                    w60: agg.w60,
-                })
-                .collect()
-        }
-        TierMode::Offline => {
-            get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &intervals, false)
-                .await?
-                .into_iter()
-                .map(|(user_id, agg)| WindowsAggRow {
-                    user_id,
-                    messages: agg.messages,
-                    uniq_messages: agg.uniq_messages,
-                    w1: agg.w1,
-                    w5: agg.w5,
-                    w15: agg.w15,
-                    w30: agg.w30,
-                    w60: agg.w60,
-                })
-                .collect()
-        }
-    };
-
-    let mut rows_by_user: HashMap<String, WindowsAggRow> = HashMap::new();
-    for row in rows {
-        rows_by_user.insert(row.user_id.clone(), row);
-    }
-
-    // Resolve logins once
-    let mut user_ids_all: Vec<String> = rows_by_user.keys().cloned().collect();
-    user_ids_all.sort();
-    let user_logins = app
-        .get_users(user_ids_all.clone(), vec![], false)
-        .await
-        .unwrap_or_default();
-
-    crate::tiers::filter_bots(&mut rows_by_user, &user_logins, &bot_filter);
-
-    let ranked = crate::tiers::rank(rows_by_user, user_logins);
+    let period = TierPeriod::Month { year, month };
+    let tiers = compute_tiers(&app, &channel_id, channel, period, &mode_query).await?;
 
     let response = TierResponse {
         year,
         month,
-        timezone: crate::tiers::TIMEZONE,
-        total_users: ranked.total_users,
-        total_messages: ranked.total_messages,
-        total_unique_messages: ranked.total_unique_messages,
-        entries: ranked.entries.into_iter().map(TierEntry::from).collect(),
+        timezone: TIMEZONE,
+        total_users: tiers.total_users,
+        total_messages: tiers.total_messages,
+        total_unique_messages: tiers.total_unique_messages,
+        entries: tiers.entries.into_iter().map(TierEntry::from).collect(),
     };
-
-    spawn_supabase_tiers(
-        &app,
-        &month_path.channel_info.channel,
-        "month",
-        format!("{year:04}{month:02}"),
-        mode,
-        response.total_users,
-        response.total_messages,
-        response.total_unique_messages,
-        &response.entries,
-    );
-
     Ok((no_cache_header(), Json(response)))
 }
 
@@ -360,112 +204,26 @@ pub async fn get_channel_tiers_day(
     Path(day_path): Path<ChannelDayPath>,
     Query(mode_query): Query<TierModeQuery>,
 ) -> Result<impl IntoApiResponse> {
-    let channel_id = match day_path.channel_info.channel_id_type {
-        ChannelIdType::Name => {
-            app.get_user_id_by_name(&day_path.channel_info.channel)
-                .await?
-        }
-        ChannelIdType::Id => day_path.channel_info.channel.clone(),
-    };
-
+    let channel = &day_path.channel_info.channel;
+    let channel_id = resolve_channel(&app, day_path.channel_info.channel_id_type, channel).await?;
     app.check_opted_out(&channel_id, None)?;
 
     let year: i32 = day_path.year.parse()?;
     let month = normalize_month(day_path.month.parse()?)?;
     let day = normalize_day(year, month, day_path.day.parse()?)?;
-    let yyyymmdd = year * 10000 + (month as i32) * 100 + day as i32;
-
-    let mode = mode_query.mode;
-    let bot_filter: HashSet<String> = mode_query
-        .exclude_bots
-        .iter()
-        .map(|bot| bot.to_lowercase())
-        .collect();
-
-    // Determine intervals from Sully for this day. Always try live fetch, fallback to cache.
-    let streams = load_sully_streams(&day_path.channel_info.channel, year).await;
-
-    let intervals = streams
-        .as_ref()
-        .map(|resp| intervals_for_day(year, month, day, &resp.streams))
-        .unwrap_or_default();
-
-    let rows = match mode {
-        TierMode::All => get_day_windows(&app.db, &channel_id, yyyymmdd).await?,
-        TierMode::Online => {
-            get_day_windows_with_ranges(&app.db, &channel_id, yyyymmdd, &intervals, true)
-                .await?
-                .into_iter()
-                .map(|(user_id, agg)| WindowsAggRow {
-                    user_id,
-                    messages: agg.messages,
-                    uniq_messages: agg.uniq_messages,
-                    w1: agg.w1,
-                    w5: agg.w5,
-                    w15: agg.w15,
-                    w30: agg.w30,
-                    w60: agg.w60,
-                })
-                .collect()
-        }
-        TierMode::Offline => {
-            get_day_windows_with_ranges(&app.db, &channel_id, yyyymmdd, &intervals, false)
-                .await?
-                .into_iter()
-                .map(|(user_id, agg)| WindowsAggRow {
-                    user_id,
-                    messages: agg.messages,
-                    uniq_messages: agg.uniq_messages,
-                    w1: agg.w1,
-                    w5: agg.w5,
-                    w15: agg.w15,
-                    w30: agg.w30,
-                    w60: agg.w60,
-                })
-                .collect()
-        }
-    };
-
-    let mut rows_by_user: HashMap<String, WindowsAggRow> = HashMap::new();
-    for row in rows {
-        rows_by_user.insert(row.user_id.clone(), row);
-    }
-
-    // Resolve logins once
-    let mut user_ids_all: Vec<String> = rows_by_user.keys().cloned().collect();
-    user_ids_all.sort();
-    let user_logins = app
-        .get_users(user_ids_all.clone(), vec![], false)
-        .await
-        .unwrap_or_default();
-
-    crate::tiers::filter_bots(&mut rows_by_user, &user_logins, &bot_filter);
-
-    let ranked = crate::tiers::rank(rows_by_user, user_logins);
+    let period = TierPeriod::Day { year, month, day };
+    let tiers = compute_tiers(&app, &channel_id, channel, period, &mode_query).await?;
 
     let response = TierDayResponse {
         year,
         month,
         day,
-        timezone: crate::tiers::TIMEZONE,
-        total_users: ranked.total_users,
-        total_messages: ranked.total_messages,
-        total_unique_messages: ranked.total_unique_messages,
-        entries: ranked.entries.into_iter().map(TierEntry::from).collect(),
+        timezone: TIMEZONE,
+        total_users: tiers.total_users,
+        total_messages: tiers.total_messages,
+        total_unique_messages: tiers.total_unique_messages,
+        entries: tiers.entries.into_iter().map(TierEntry::from).collect(),
     };
-
-    spawn_supabase_tiers(
-        &app,
-        &day_path.channel_info.channel,
-        "day",
-        format!("{year:04}{month:02}{day:02}"),
-        mode,
-        response.total_users,
-        response.total_messages,
-        response.total_unique_messages,
-        &response.entries,
-    );
-
     Ok((no_cache_header(), Json(response)))
 }
 
@@ -474,161 +232,72 @@ pub async fn get_channel_tiers_year(
     Path(year_path): Path<ChannelYearPath>,
     Query(mode_query): Query<TierModeQuery>,
 ) -> Result<impl IntoApiResponse> {
-    let channel_id = match year_path.channel_info.channel_id_type {
-        ChannelIdType::Name => {
-            app.get_user_id_by_name(&year_path.channel_info.channel)
-                .await?
-        }
-        ChannelIdType::Id => year_path.channel_info.channel.clone(),
-    };
-
+    let channel = &year_path.channel_info.channel;
+    let channel_id = resolve_channel(&app, year_path.channel_info.channel_id_type, channel).await?;
     app.check_opted_out(&channel_id, None)?;
 
     let year: i32 = year_path.year.parse()?;
-    let mode = mode_query.mode;
-    let bot_filter: HashSet<String> = mode_query
-        .exclude_bots
-        .iter()
-        .map(|bot| bot.to_lowercase())
-        .collect();
-
-    // Fetch sully streams once for all months (for online/offline mode) - prefer live fetch.
-    let streams: Option<Vec<SullyStreamEntry>> =
-        load_sully_streams(&year_path.channel_info.channel, year)
-            .await
-            .map(|resp| resp.streams);
-
-    // For each month aggregate windows
-    let mut rows_by_user: HashMap<String, WindowsAggRow> = HashMap::new();
-    for month in 1..=12 {
-        let yyyymm = year * 100 + month as i32;
-        let month_intervals = streams
-            .as_ref()
-            .map(|data| intervals_for_month(year, month, data))
-            .unwrap_or_default();
-
-        let month_rows: Vec<WindowsAggRow> = match mode {
-            TierMode::All => get_month_windows(&app.db, &channel_id, yyyymm).await?,
-            TierMode::Online => {
-                get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &month_intervals, true)
-                    .await?
-                    .into_iter()
-                    .map(|(user_id, agg)| WindowsAggRow {
-                        user_id,
-                        messages: agg.messages,
-                        uniq_messages: agg.uniq_messages,
-                        w1: agg.w1,
-                        w5: agg.w5,
-                        w15: agg.w15,
-                        w30: agg.w30,
-                        w60: agg.w60,
-                    })
-                    .collect()
-            }
-            TierMode::Offline => {
-                get_month_windows_with_ranges(&app.db, &channel_id, yyyymm, &month_intervals, false)
-                    .await?
-                    .into_iter()
-                    .map(|(user_id, agg)| WindowsAggRow {
-                        user_id,
-                        messages: agg.messages,
-                        uniq_messages: agg.uniq_messages,
-                        w1: agg.w1,
-                        w5: agg.w5,
-                        w15: agg.w15,
-                        w30: agg.w30,
-                        w60: agg.w60,
-                    })
-                    .collect()
-            }
-        };
-
-        for row in month_rows {
-            rows_by_user
-                .entry(row.user_id.clone())
-                .and_modify(|acc| {
-                    acc.messages += row.messages;
-                    acc.uniq_messages += row.uniq_messages;
-                    acc.w1 += row.w1;
-                    acc.w5 += row.w5;
-                    acc.w15 += row.w15;
-                    acc.w30 += row.w30;
-                    acc.w60 += row.w60;
-                })
-                .or_insert(row);
-        }
-    }
-
-    // Resolve logins once
-    let mut user_ids_all: Vec<String> = rows_by_user.keys().cloned().collect();
-    user_ids_all.sort();
-    let user_logins = app
-        .get_users(user_ids_all.clone(), vec![], false)
-        .await
-        .unwrap_or_default();
-
-    crate::tiers::filter_bots(&mut rows_by_user, &user_logins, &bot_filter);
-
-    let ranked = crate::tiers::rank(rows_by_user, user_logins);
+    let period = TierPeriod::Year { year };
+    let tiers = compute_tiers(&app, &channel_id, channel, period, &mode_query).await?;
 
     let response = TierYearResponse {
         year,
-        timezone: crate::tiers::TIMEZONE,
-        total_users: ranked.total_users,
-        total_messages: ranked.total_messages,
-        total_unique_messages: ranked.total_unique_messages,
-        entries: ranked.entries.into_iter().map(TierEntry::from).collect(),
+        timezone: TIMEZONE,
+        total_users: tiers.total_users,
+        total_messages: tiers.total_messages,
+        total_unique_messages: tiers.total_unique_messages,
+        entries: tiers.entries.into_iter().map(TierEntry::from).collect(),
     };
-
-    spawn_supabase_tiers(
-        &app,
-        &year_path.channel_info.channel,
-        "year",
-        format!("{year:04}"),
-        mode,
-        response.total_users,
-        response.total_messages,
-        response.total_unique_messages,
-        &response.entries,
-    );
-
     Ok((no_cache_header(), Json(response)))
+}
+
+/// Computes a tier table and snapshots it to Supabase when enabled.
+async fn compute_tiers(
+    app: &App,
+    channel_id: &str,
+    channel: &str,
+    period: TierPeriod,
+    mode_query: &TierModeQuery,
+) -> Result<RankedTiers> {
+    let mode = mode_query.mode.into();
+    let tiers = services::tiers::compute(
+        app,
+        channel_id,
+        channel,
+        period,
+        mode,
+        &mode_query.exclude_bots,
+    )
+    .await?;
+    services::supabase::spawn_tier_snapshot(&app.config, channel, period, mode, &tiers);
+    Ok(tiers)
+}
+
+async fn resolve_channel(app: &App, id_type: ChannelIdType, channel: &str) -> Result<String> {
+    match id_type {
+        ChannelIdType::Name => app.get_user_id_by_name(channel).await,
+        ChannelIdType::Id => Ok(channel.to_owned()),
+    }
 }
 
 pub async fn get_sully_streams(
     Path((channel, year)): Path<(String, i32)>,
 ) -> Result<impl IntoApiResponse> {
-    // Prefer live fetch, log failures, fall back to cache.
-    match build_http_client() {
-        Ok(http) => match fetch_sully_id(&http, &channel).await {
-            Ok(internal_id) => match fetch_sully_streams(&http, &internal_id, year).await {
-                Ok((total, data)) => {
-                    let response = SullyStreamsResponse {
-                        channel: channel.clone(),
-                        year,
-                        total,
-                        streams: data.clone(),
-                    };
-                    let _ = write_sully_cache(&channel, year, &response);
-                    return Ok((cache_header(600), Json(response)));
-                }
-                Err(e) => error!(
-                    "sully endpoint: fetch streams failed channel={} year={} err={:?}",
-                    channel, year, e
-                ),
-            },
-            Err(e) => error!(
-                "sully endpoint: fetch internal_id failed channel={} err={:?}",
-                channel, e
-            ),
-        },
-        Err(e) => {
-            error!("sully endpoint: build_http_client failed err={:?}", e);
-        }
+    // Prefer a live fetch (failures are logged), fall back to the cache.
+    if let Ok((total, streams)) = sully::fetch(&channel, year).await {
+        let list = sully::StreamList {
+            channel,
+            year,
+            total,
+            streams,
+        };
+        let _ = sully::write_cache(&list);
+        return Ok((cache_header(600), Json(SullyStreamsResponse::from(list))));
     }
 
-    if let Some(cached) = read_sully_cache(&channel, year).filter(|resp| !resp.streams.is_empty()) {
-        return Ok((cache_header(3600), Json(cached)));
+    if let Some(cached) = sully::read_cache(&channel, year).filter(|list| !list.streams.is_empty())
+    {
+        return Ok((cache_header(3600), Json(SullyStreamsResponse::from(cached))));
     }
 
     Err(Error::NotFound)
@@ -963,381 +632,4 @@ fn normalize_day(year: i32, month: u32, day_raw: i32) -> Result<u32> {
             "Invalid date: {year}-{month:02}-{day_raw:02}"
         )))
     }
-}
-
-fn tier_mode_str(mode: TierMode) -> &'static str {
-    match mode {
-        TierMode::All => "all",
-        TierMode::Online => "online",
-        TierMode::Offline => "offline",
-    }
-}
-
-fn spawn_supabase_tiers(
-    app: &App,
-    channel: &str,
-    scope: &str,
-    period_key: String,
-    mode: TierMode,
-    total_users: u64,
-    total_messages: u64,
-    total_unique: u64,
-    entries: &[TierEntry],
-) {
-    if !app.config.enable_tier_snapshots {
-        return;
-    }
-
-    let Some(url) = app.config.supabase_url.clone() else {
-        return;
-    };
-    let Some(service_key) = app.config.supabase_service_key.clone() else {
-        return;
-    };
-
-    let p_total_users = match i32::try_from(total_users) {
-        Ok(v) => v,
-        Err(_) => {
-            warn!("supabase skip: total_users overflow ({}).", total_users);
-            return;
-        }
-    };
-    let p_total_messages = match i32::try_from(total_messages) {
-        Ok(v) => v,
-        Err(_) => {
-            warn!(
-                "supabase skip: total_messages overflow ({}).",
-                total_messages
-            );
-            return;
-        }
-    };
-    let p_total_unique_messages = match i32::try_from(total_unique) {
-        Ok(v) => v,
-        Err(_) => {
-            warn!(
-                "supabase skip: total_unique_messages overflow ({}).",
-                total_unique
-            );
-            return;
-        }
-    };
-
-    let entries_json = match serde_json::to_value(entries) {
-        Ok(v) => v,
-        Err(e) => {
-            warn!("supabase skip: serialize entries failed: {:?}", e);
-            return;
-        }
-    };
-
-    let payload = TierSnapshotPayload {
-        p_channel: channel.to_string(),
-        p_scope: scope.to_string(),
-        p_period_key: period_key,
-        p_mode: tier_mode_str(mode).to_string(),
-        p_total_users,
-        p_total_messages,
-        p_total_unique_messages,
-        p_entries: entries_json,
-    };
-
-    let cfg = SupabaseConfig { url, service_key };
-    tokio::spawn(async move {
-        if let Err(e) = write_tier_snapshot(cfg, payload).await {
-            warn!("supabase upsert failed: {:?}", e);
-        }
-    });
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum SullyId {
-    Str(String),
-    Num(i64),
-}
-
-impl SullyId {
-    fn into_string(self) -> String {
-        match self {
-            SullyId::Str(s) => s,
-            SullyId::Num(n) => n.to_string(),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct SullySearchItem {
-    value: SullyId,
-    itemtype: i32,
-}
-
-#[derive(Deserialize)]
-struct SullyStreamsRaw {
-    #[serde(rename = "recordsTotal")]
-    records_total: u32,
-    data: Vec<SullyStreamRawEntry>,
-}
-
-#[derive(Deserialize)]
-struct SullyStreamRawEntry {
-    #[serde(rename = "streamId")]
-    stream_id: String,
-    #[serde(rename = "startDateTime")]
-    start_iso: Option<String>,
-    #[serde(rename = "starttime")]
-    start_human: Option<String>,
-    #[serde(rename = "endtime")]
-    end_human: Option<String>,
-    #[serde(rename = "length")]
-    length: Option<f64>,
-    gamesplayed: Option<String>,
-}
-
-async fn fetch_sully_id(http: &HttpClient, login: &str) -> Result<String> {
-    let url = format!("https://sullygnome.com/api/standardsearch/{login}");
-    let resp = http.get(&url).send().await.map_err(|e| {
-        error!("sully id http error login={} err={:?}", login, e);
-        Error::Internal
-    })?;
-    let status = resp.status();
-    let body = resp.text().await.unwrap_or_default();
-    if !status.is_success() {
-        error!(
-            "sully id non-success status={} login={} body_snippet={}",
-            status,
-            login,
-            body.chars().take(500).collect::<String>()
-        );
-        return Err(Error::NotFound);
-    }
-    let items: Vec<SullySearchItem> = serde_json::from_str(&body).map_err(|e| {
-        error!(
-            "sully id parse error login={} err={:?} body_snippet={}",
-            login,
-            e,
-            body.chars().take(500).collect::<String>()
-        );
-        Error::Internal
-    })?;
-    let id = items
-        .into_iter()
-        .find(|it| it.itemtype == 1)
-        .map(|it| it.value.into_string())
-        .ok_or(Error::NotFound)?;
-    Ok(id)
-}
-
-async fn fetch_sully_streams(
-    http: &HttpClient,
-    internal_id: &str,
-    year: i32,
-) -> Result<(u32, Vec<SullyStreamEntry>)> {
-    let mut offset: u32 = 0;
-    let limit: u32 = 2000;
-    let mut streams = Vec::new();
-
-    let total = loop {
-        let url = format!(
-            "https://sullygnome.com/api/tables/channeltables/streams/{year}/{internal_id}/%20/1/1/desc/{offset}/{limit}"
-        );
-        let resp_raw = http.get(&url).send().await.map_err(|e| {
-            error!("sully streams http error url={} err={:?}", url, e);
-            Error::Internal
-        })?;
-        let status = resp_raw.status();
-        let body = resp_raw.text().await.unwrap_or_default();
-        if !status.is_success() {
-            error!(
-                "sully streams non-success status={} url={} body_snippet={}",
-                status,
-                url,
-                body.chars().take(500).collect::<String>()
-            );
-            return Err(Error::NotFound);
-        }
-        let parsed = parse_sully_body("", year, &body).map_err(|e| {
-            error!(
-                "sully streams parse error url={} err={:?} body_snippet={}",
-                url,
-                e,
-                body.chars().take(500).collect::<String>()
-            );
-            Error::Internal
-        })?;
-        let total = parsed.total;
-        let count_added = parsed.streams.len() as u32;
-        streams.extend(parsed.streams);
-        offset += limit;
-        if offset >= total || count_added == 0 {
-            break total;
-        }
-    };
-
-    Ok((total, streams))
-}
-
-fn parse_sully_body(channel: &str, year: i32, body: &str) -> Result<SullyStreamsResponse> {
-    // Try raw first
-    if let Ok(raw) = serde_json::from_str::<SullyStreamsRaw>(body) {
-        let streams = raw
-            .data
-            .into_iter()
-            .map(|row| {
-                let len_minutes = row.length.map(|v| v.round() as u32);
-                SullyStreamEntry {
-                    stream_id: row.stream_id,
-                    start_iso: row.start_iso,
-                    start_human: row.start_human,
-                    end_human: row.end_human,
-                    length_minutes: len_minutes,
-                    gamesplayed: row.gamesplayed,
-                }
-            })
-            .collect();
-        return Ok(SullyStreamsResponse {
-            channel: channel.to_string(),
-            year,
-            total: raw.records_total,
-            streams,
-        });
-    }
-    if let Ok(resp) = serde_json::from_str::<SullyStreamsResponse>(body) {
-        return Ok(resp);
-    }
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
-        let records_total = val
-            .get("recordsTotal")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
-        let mut streams = Vec::new();
-        if let Some(arr) = val.get("data").and_then(|v| v.as_array()) {
-            for row in arr {
-                let len_minutes = row
-                    .get("length")
-                    .and_then(|v| v.as_f64())
-                    .map(|v| v.round() as u32);
-                streams.push(SullyStreamEntry {
-                    stream_id: row
-                        .get("streamId")
-                        .and_then(|v| v.as_i64())
-                        .map(|v| v.to_string())
-                        .or_else(|| {
-                            row.get("streamId")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
-                        })
-                        .unwrap_or_default(),
-                    start_iso: row
-                        .get("startDateTime")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    start_human: row
-                        .get("starttime")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    end_human: row
-                        .get("endtime")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    length_minutes: len_minutes,
-                    gamesplayed: row
-                        .get("gamesplayed")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                });
-            }
-        }
-        return Ok(SullyStreamsResponse {
-            channel: channel.to_string(),
-            year,
-            total: records_total,
-            streams,
-        });
-    }
-    Err(Error::NotFound)
-}
-
-fn sully_cache_path(channel: &str, year: i32) -> PathBuf {
-    PathBuf::from("cache")
-        .join("sullygnome")
-        .join(format!("{channel}-{year}.json"))
-}
-
-fn read_sully_cache(channel: &str, year: i32) -> Option<SullyStreamsResponse> {
-    let path = sully_cache_path(channel, year);
-    let data = fs::read_to_string(path).ok()?;
-    parse_sully_body(channel, year, &data).ok()
-}
-
-fn write_sully_cache(channel: &str, year: i32, resp: &SullyStreamsResponse) -> std::io::Result<()> {
-    let path = sully_cache_path(channel, year);
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let data = serde_json::to_string_pretty(resp)?;
-    fs::write(path, data)
-}
-
-fn intervals_for_month(year: i32, month: u32, streams: &[SullyStreamEntry]) -> Vec<(i64, i64)> {
-    let moscow = FixedOffset::east_opt(3 * 3600).unwrap();
-    let month_start = NaiveDate::from_ymd_opt(year, month, 1)
-        .unwrap()
-        .and_time(NaiveTime::default())
-        .and_local_timezone(moscow)
-        .unwrap();
-    let month_end = month_start.checked_add_months(Months::new(1)).unwrap();
-
-    streams
-        .iter()
-        .filter_map(|s| {
-            let start_iso = s.start_iso.as_ref()?;
-            let length = s.length_minutes?;
-            let start = DateTime::parse_from_rfc3339(start_iso)
-                .ok()?
-                .with_timezone(&moscow);
-            let end = start + chrono::Duration::minutes(length as i64);
-            let from = std::cmp::max(start, month_start);
-            let to = std::cmp::min(end, month_end);
-            if to > from {
-                Some((from.timestamp_millis(), to.timestamp_millis()))
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-fn intervals_for_day(
-    year: i32,
-    month: u32,
-    day: u32,
-    streams: &[SullyStreamEntry],
-) -> Vec<(i64, i64)> {
-    let moscow = FixedOffset::east_opt(3 * 3600).unwrap();
-    let day_start = NaiveDate::from_ymd_opt(year, month, day)
-        .unwrap()
-        .and_time(NaiveTime::default())
-        .and_local_timezone(moscow)
-        .unwrap();
-    let day_end = day_start.checked_add_days(Days::new(1)).unwrap();
-
-    streams
-        .iter()
-        .filter_map(|s| {
-            let start_iso = s.start_iso.as_ref()?;
-            let length = s.length_minutes?;
-            let start = DateTime::parse_from_rfc3339(start_iso)
-                .ok()?
-                .with_timezone(&moscow);
-            let end = start + chrono::Duration::minutes(length as i64);
-            let from = std::cmp::max(start, day_start);
-            let to = std::cmp::min(end, day_end);
-            if to > from {
-                Some((from.timestamp_millis(), to.timestamp_millis()))
-            } else {
-                None
-            }
-        })
-        .collect()
 }

@@ -1,8 +1,11 @@
 use super::responders::logs::{JsonResponseType, LogsResponseType};
-use crate::domain::{
-    self,
-    logs::{LogDate, LogsQuery},
-    stats::{NameHistoryEntry, UserMessageCount},
+use crate::{
+    domain::{
+        self,
+        logs::{LogDate, LogsQuery},
+        stats::{NameHistoryEntry, UserMessageCount},
+    },
+    services::sully::{Stream, StreamList},
 };
 use chrono::{DateTime, Utc};
 use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
@@ -415,6 +418,21 @@ pub struct SullyStreamsResponse {
     pub streams: Vec<SullyStreamEntry>,
 }
 
+impl From<StreamList> for SullyStreamsResponse {
+    fn from(list: StreamList) -> Self {
+        Self {
+            channel: list.channel,
+            year: list.year,
+            total: list.total,
+            streams: list
+                .streams
+                .into_iter()
+                .map(SullyStreamEntry::from)
+                .collect(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, JsonSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SullyStreamEntry {
@@ -431,12 +449,35 @@ pub struct SullyStreamEntry {
     pub gamesplayed: Option<String>,
 }
 
+impl From<Stream> for SullyStreamEntry {
+    fn from(stream: Stream) -> Self {
+        Self {
+            stream_id: stream.stream_id,
+            start_iso: stream.start_iso,
+            start_human: stream.start_human,
+            end_human: stream.end_human,
+            length_minutes: stream.length_minutes,
+            gamesplayed: stream.gamesplayed,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum TierMode {
     All,
     Online,
     Offline,
+}
+
+impl From<TierMode> for domain::tiers::TierMode {
+    fn from(mode: TierMode) -> Self {
+        match mode {
+            TierMode::All => Self::All,
+            TierMode::Online => Self::Online,
+            TierMode::Offline => Self::Offline,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Default)]

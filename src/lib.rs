@@ -10,9 +10,8 @@ pub mod logs;
 pub mod maintenance;
 pub mod migrator;
 pub mod mirror;
+pub mod services;
 pub mod state;
-pub mod supabase;
-pub mod tiers;
 pub mod web;
 
 pub type Result<T> = std::result::Result<T, error::Error>;

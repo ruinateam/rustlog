@@ -11,6 +11,7 @@ use crate::{
     domain::{
         logs::{LogDate, LogsQuery, TimeRange},
         stats::{NameHistoryEntry, UserMessageCount},
+        tiers::UserWindows,
     },
     error::Error,
     logs::stream::{FlushBufferResponse, LogsStream},
@@ -375,6 +376,36 @@ pub struct WindowsAgg {
     pub w15: u64,
     pub w30: u64,
     pub w60: u64,
+}
+
+impl From<WindowsAggRow> for UserWindows {
+    fn from(row: WindowsAggRow) -> Self {
+        Self {
+            user_id: row.user_id,
+            messages: row.messages,
+            uniq_messages: row.uniq_messages,
+            w1: row.w1,
+            w5: row.w5,
+            w15: row.w15,
+            w30: row.w30,
+            w60: row.w60,
+        }
+    }
+}
+
+impl WindowsAgg {
+    pub fn into_user_windows(self, user_id: String) -> UserWindows {
+        UserWindows {
+            user_id,
+            messages: self.messages,
+            uniq_messages: self.uniq_messages,
+            w1: self.w1,
+            w5: self.w5,
+            w15: self.w15,
+            w30: self.w30,
+            w60: self.w60,
+        }
+    }
 }
 
 pub async fn get_day_windows(
