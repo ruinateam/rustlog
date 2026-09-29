@@ -1,33 +1,26 @@
-mod app;
 mod args;
-mod bot;
-mod config;
-mod db;
-mod error;
-mod logs;
-mod maintenance;
-mod migrator;
-mod mirror;
-mod state;
-mod supabase;
-mod tiers;
-mod web;
-
-pub type Result<T> = std::result::Result<T, error::Error>;
-pub type ShutdownRx = watch::Receiver<()>;
 
 use anyhow::{anyhow, Context};
-use app::App;
 use args::{Args, Command};
 use clap::Parser;
-use config::Config;
-use db::{setup_db, writer::create_writer};
 use futures::future::try_join_all;
 #[cfg(unix)]
 use futures::{stream::FuturesUnordered, StreamExt};
-use migrator::Migrator;
 use mimalloc::MiMalloc;
-use state::OperationalState;
+use rustlog::{
+    app::{
+        cache::{BadgesCache, UsersCache},
+        App,
+    },
+    bot,
+    config::Config,
+    db::{setup_db, writer::create_writer},
+    maintenance,
+    migrator::Migrator,
+    mirror,
+    state::OperationalState,
+    web, ShutdownRx,
+};
 use std::{
     env, fs,
     path::Path,
@@ -47,8 +40,6 @@ use twitch_api::{
     HelixClient,
 };
 use twitch_irc::login::StaticLoginCredentials;
-
-use crate::app::cache::{BadgesCache, UsersCache};
 
 const SHUTDOWN_TIMEOUT_SECONDS: u64 = 8;
 const TOKEN_RETRY_INTERVAL_SECONDS: u64 = 5;
