@@ -219,6 +219,10 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
     let mut web_handle = tokio::spawn(web::run(app, shutdown_rx.clone(), bot_tx));
 
     tokio::select! {
+        // Tasks stop soon after a shutdown signal, so check the signal first:
+        // otherwise a task that already stopped looks like it crashed.
+        biased;
+
         _ = shutdown_rx.changed() => {
             debug!("Waiting for tasks to shut down");
 
