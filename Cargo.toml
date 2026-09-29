@@ -85,6 +85,14 @@ insta = "1.48.0"
 pretty_assertions = "1.4.0"
 tower = { version = "0.5.3", features = ["util"] }
 
+# Line tables keep file and line numbers in backtraces; full debug info
+# mostly bloats target/ and slows down linking. Dependencies get none.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 strip = true
 lto = "thin"
