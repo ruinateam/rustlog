@@ -85,6 +85,7 @@ impl Bot {
                 let channel_ids = app.state.channel_ids();
 
                 let interval = match app
+                    .twitch
                     .get_users(Vec::from_iter(channel_ids), vec![], true)
                     .await
                 {
@@ -274,7 +275,7 @@ impl Bot {
 
             Ok(())
         } else if self.check_admin(sender_id).is_ok() {
-            let user_id = self.app.get_user_id_by_name(arg).await?;
+            let user_id = self.app.twitch.get_user_id_by_name(arg).await?;
 
             self.app.optout_user(&user_id).await?;
 
@@ -296,6 +297,7 @@ impl Bot {
 
         let channels = self
             .app
+            .twitch
             .get_users(
                 vec![],
                 channels.iter().map(ToString::to_string).collect(),

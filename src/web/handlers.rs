@@ -13,7 +13,7 @@ use crate::{
     app::App,
     domain::tiers::{RankedTiers, TierPeriod, TIMEZONE},
     error::Error,
-    services::{self, sully},
+    services::{self, sully, tiers::TierQuery},
     storage::{availability, logs, stats, stream::LogsStream},
     web::schema::{LogRangeParams, LogsPathDate, SullyStreamsResponse, TierModeQuery},
     Result,
@@ -34,6 +34,7 @@ pub async fn get_channels(app: State<App>) -> Result<impl IntoApiResponse> {
     let channel_ids = app.state.channel_ids();
 
     let channels = app
+        .twitch
         .get_users(Vec::from_iter(channel_ids), vec![], false)
         .await?;
 
@@ -55,7 +56,7 @@ pub async fn get_chat_badges(
         return Err(Error::NotFound);
     }
 
-    let (global, channel) = app.get_chat_badges(&channel_id).await?;
+    let (global, channel) = app.twitch.get_chat_badges(&channel_id).await?;
     let badges = global
         .into_iter()
         .chain(channel)
@@ -86,7 +87,7 @@ pub async fn get_channel_logs(
     app: State<App>,
 ) -> Result<Response> {
     let channel_id = match channel_id_type {
-        ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
+        ChannelIdType::Name => app.twitch.get_user_id_by_name(&channel).await?,
         ChannelIdType::Id => channel.clone(),
     };
 
@@ -117,7 +118,7 @@ pub async fn get_channel_stats(
     app: State<App>,
 ) -> Result<Json<ChannelLogsStats>> {
     let channel_id = match channel_id_type {
-        ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
+        ChannelIdType::Name => app.twitch.get_user_id_by_name(&channel).await?,
         ChannelIdType::Id => channel.clone(),
     };
     app.check_opted_out(&channel_id, None)?;
@@ -126,7 +127,7 @@ pub async fn get_channel_stats(
         stats::get_channel_stats(&app.db, &channel_id, range_params.time_range()).await?;
 
     let user_ids = stats_rows.iter().map(|row| row.user_id.clone()).collect();
-    let mut users = app.get_users(user_ids, vec![], false).await?;
+    let mut users = app.twitch.get_users(user_ids, vec![], false).await?;
 
     let top_chatters = stats_rows
         .into_iter()
@@ -153,6 +154,7 @@ pub async fn get_user_stats(
     app.check_opted_out(&channel_id, Some(&user_id))?;
 
     let user_login = app
+        .twitch
         .get_users(vec![user_id.clone()], vec![], false)
         .await?
         .into_values()
@@ -263,22 +265,23 @@ async fn compute_tiers(
     mode_query: &TierModeQuery,
 ) -> Result<RankedTiers> {
     let mode = mode_query.mode.into();
-    let tiers = services::tiers::compute(
-        app,
-        channel_id,
-        channel,
-        period,
-        mode,
-        &mode_query.exclude_bots,
-    )
-    .await?;
+    let tiers = app
+        .tiers
+        .compute(TierQuery {
+            channel_id,
+            channel,
+            period,
+            mode,
+            excluded_bots: &mode_query.exclude_bots,
+        })
+        .await?;
     services::supabase::spawn_tier_snapshot(&app.config, channel, period, mode, &tiers);
     Ok(tiers)
 }
 
 async fn resolve_channel(app: &App, id_type: ChannelIdType, channel: &str) -> Result<String> {
     match id_type {
-        ChannelIdType::Name => app.get_user_id_by_name(channel).await,
+        ChannelIdType::Name => app.twitch.get_user_id_by_name(channel).await,
         ChannelIdType::Id => Ok(channel.to_owned()),
     }
 }
@@ -319,7 +322,8 @@ pub async fn get_channel_logs_by_date(
 
     let channel_id = match channel_log_params.channel_info.channel_id_type {
         ChannelIdType::Name => {
-            app.get_user_id_by_name(&channel_log_params.channel_info.channel)
+            app.twitch
+                .get_user_id_by_name(&channel_log_params.channel_info.channel)
                 .await?
         }
         ChannelIdType::Id => channel_log_params.channel_info.channel.clone(),
@@ -463,13 +467,13 @@ pub async fn list_available_logs(
     })?;
     let channel_id = match channel {
         ChannelParam::ChannelId(id) => id,
-        ChannelParam::Channel(name) => app.get_user_id_by_name(&name).await?,
+        ChannelParam::Channel(name) => app.twitch.get_user_id_by_name(&name).await?,
     };
 
     let available_logs = if let Some(user) = user {
         let user_id = match user {
             UserParam::UserId(id) => id,
-            UserParam::User(name) => app.get_user_id_by_name(&name).await?,
+            UserParam::User(name) => app.twitch.get_user_id_by_name(&name).await?,
         };
         app.check_opted_out(&channel_id, Some(&user_id))?;
         availability::read_available_user_logs(&app.db, &channel_id, &user_id).await?
@@ -498,7 +502,7 @@ pub async fn random_channel_line(
     Query(logs_params): Query<LogsParams>,
 ) -> Result<impl IntoApiResponse> {
     let channel_id = match channel_id_type {
-        ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
+        ChannelIdType::Name => app.twitch.get_user_id_by_name(&channel).await?,
         ChannelIdType::Id => channel,
     };
     app.check_opted_out(&channel_id, None)?;
@@ -607,11 +611,11 @@ pub fn no_cache_header() -> TypedHeader<CacheControl> {
 
 async fn resolve_user_params(params: &UserLogPathParams, app: &App) -> Result<(String, String)> {
     let channel_id = match params.channel_id_type {
-        ChannelIdType::Name => app.get_user_id_by_name(&params.channel).await?,
+        ChannelIdType::Name => app.twitch.get_user_id_by_name(&params.channel).await?,
         ChannelIdType::Id => params.channel.clone(),
     };
     let user_id = match params.user_id_type {
-        UserIdType::Name => app.get_user_id_by_name(&params.user).await?,
+        UserIdType::Name => app.twitch.get_user_id_by_name(&params.user).await?,
         UserIdType::Id => params.user.clone(),
     };
     Ok((channel_id, user_id))

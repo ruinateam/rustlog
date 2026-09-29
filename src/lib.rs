@@ -12,6 +12,7 @@ pub mod mirror;
 pub mod services;
 pub mod state;
 pub mod storage;
+pub mod twitch;
 pub mod web;
 
 pub type Result<T> = std::result::Result<T, error::Error>;

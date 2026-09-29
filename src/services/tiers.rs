@@ -1,85 +1,113 @@
 //! Builds tier tables from the stored chat activity.
 
-use super::sully::Stream;
+use super::sully::{Stream, SullyGnome};
 use crate::{
-    app::App,
     domain::{
         logs::TimeRange,
         tiers::{filter_bots, rank, RankedTiers, TierMode, TierPeriod, UserWindows},
     },
     storage::tiers::{user_windows, CalendarPeriod, StreamFilter},
+    twitch::Twitch,
     Result,
 };
 use chrono::{DateTime, Days, FixedOffset, Months, NaiveDate, NaiveTime, Utc};
-use std::collections::{HashMap, HashSet};
+use clickhouse::Client;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
-/// Ranks the users of a channel in a period.
-///
-/// `channel` is the channel as given by the client, a login or an id; stream
-/// windows for the online and offline modes are looked up by it on
-/// SullyGnome.
-pub async fn compute(
-    app: &App,
-    channel_id: &str,
-    channel: &str,
-    period: TierPeriod,
-    mode: TierMode,
-    excluded_bots: &[String],
-) -> Result<RankedTiers> {
-    let excluded: HashSet<String> = excluded_bots.iter().map(|bot| bot.to_lowercase()).collect();
+/// What to rank.
+pub struct TierQuery<'a> {
+    pub channel_id: &'a str,
+    /// The channel as given by the client, a login or an id. Stream windows
+    /// for the online and offline modes are looked up by it on SullyGnome.
+    pub channel: &'a str,
+    pub period: TierPeriod,
+    pub mode: TierMode,
+    pub excluded_bots: &'a [String],
+}
 
-    let streams = match mode {
-        TierMode::All => Vec::new(),
-        TierMode::Online | TierMode::Offline => app
-            .sully
-            .load(channel, period.year())
-            .await
-            .map(|list| list.streams)
-            .unwrap_or_default(),
-    };
+/// Builds tier tables from stored messages, SullyGnome stream windows and
+/// Twitch logins.
+#[derive(Clone)]
+pub struct Tiers {
+    db: Arc<Client>,
+    sully: SullyGnome,
+    twitch: Twitch,
+}
 
-    let mut rows_by_user: HashMap<String, UserWindows> = HashMap::new();
-    match period {
-        TierPeriod::Day(date) => {
-            let period = CalendarPeriod::Day(date);
-            for row in windows_in(app, channel_id, period, mode, &streams).await? {
-                rows_by_user.insert(row.user_id.clone(), row);
+impl Tiers {
+    pub fn new(db: Arc<Client>, sully: SullyGnome, twitch: Twitch) -> Self {
+        Self { db, sully, twitch }
+    }
+
+    /// Ranks the users of a channel in a period.
+    pub async fn compute(&self, query: TierQuery<'_>) -> Result<RankedTiers> {
+        let TierQuery {
+            channel_id,
+            channel,
+            period,
+            mode,
+            excluded_bots,
+        } = query;
+        let excluded: HashSet<String> =
+            excluded_bots.iter().map(|bot| bot.to_lowercase()).collect();
+
+        let streams = match mode {
+            TierMode::All => Vec::new(),
+            TierMode::Online | TierMode::Offline => self
+                .sully
+                .load(channel, period.year())
+                .await
+                .map(|list| list.streams)
+                .unwrap_or_default(),
+        };
+
+        let mut rows_by_user: HashMap<String, UserWindows> = HashMap::new();
+        match period {
+            TierPeriod::Day(date) => {
+                let period = CalendarPeriod::Day(date);
+                for row in windows_in(&self.db, channel_id, period, mode, &streams).await? {
+                    rows_by_user.insert(row.user_id.clone(), row);
+                }
             }
-        }
-        TierPeriod::Month { year, month } => {
-            let period = CalendarPeriod::Month { year, month };
-            for row in windows_in(app, channel_id, period, mode, &streams).await? {
-                rows_by_user.insert(row.user_id.clone(), row);
-            }
-        }
-        // A year sums up its months, so unique messages count per month.
-        TierPeriod::Year { year } => {
-            for month in 1..=12 {
+            TierPeriod::Month { year, month } => {
                 let period = CalendarPeriod::Month { year, month };
-                for row in windows_in(app, channel_id, period, mode, &streams).await? {
-                    rows_by_user
-                        .entry(row.user_id.clone())
-                        .and_modify(|total| total.add(&row))
-                        .or_insert(row);
+                for row in windows_in(&self.db, channel_id, period, mode, &streams).await? {
+                    rows_by_user.insert(row.user_id.clone(), row);
+                }
+            }
+            // A year sums up its months, so unique messages count per month.
+            TierPeriod::Year { year } => {
+                for month in 1..=12 {
+                    let period = CalendarPeriod::Month { year, month };
+                    for row in windows_in(&self.db, channel_id, period, mode, &streams).await? {
+                        rows_by_user
+                            .entry(row.user_id.clone())
+                            .and_modify(|total| total.add(&row))
+                            .or_insert(row);
+                    }
                 }
             }
         }
+
+        let mut user_ids: Vec<String> = rows_by_user.keys().cloned().collect();
+        user_ids.sort();
+        let user_logins = self
+            .twitch
+            .get_users(user_ids, vec![], false)
+            .await
+            .unwrap_or_default();
+
+        filter_bots(&mut rows_by_user, &user_logins, &excluded);
+
+        Ok(rank(rows_by_user, user_logins))
     }
-
-    let mut user_ids: Vec<String> = rows_by_user.keys().cloned().collect();
-    user_ids.sort();
-    let user_logins = app
-        .get_users(user_ids, vec![], false)
-        .await
-        .unwrap_or_default();
-
-    filter_bots(&mut rows_by_user, &user_logins, &excluded);
-
-    Ok(rank(rows_by_user, user_logins))
 }
 
 async fn windows_in(
-    app: &App,
+    db: &Client,
     channel_id: &str,
     period: CalendarPeriod,
     mode: TierMode,
@@ -92,7 +120,7 @@ async fn windows_in(
         TierMode::Offline => StreamFilter::OutsideStreams(&stream_ranges),
     };
 
-    user_windows(&app.db, channel_id, period, filter).await
+    user_windows(db, channel_id, period, filter).await
 }
 
 /// The parts of the streams that fall into a Moscow calendar period.

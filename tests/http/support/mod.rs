@@ -9,24 +9,21 @@ use axum::{
     Router,
 };
 use rustlog::{
-    app::{
-        cache::{BadgesCache, UsersCache},
-        App,
-    },
+    app::App,
     bot::BotMessage,
     config::Config,
-    services::sully::SullyGnome,
+    services::{sully::SullyGnome, tiers::Tiers},
     state::OperationalState,
     storage::{setup_db, writer::FlushBuffer},
+    twitch::Twitch,
     web,
 };
 use serde_json::json;
 use std::{env, fs, sync::Arc};
 use tempfile::TempDir;
-use tokio::sync::{broadcast, mpsc, watch, RwLock};
+use tokio::sync::{broadcast, mpsc, watch};
 use tower::ServiceExt;
 use tower_http::normalize_path::NormalizePath;
-use twitch_api::HelixClient;
 
 pub const ADMIN_KEY: &str = "testkey";
 
@@ -115,14 +112,14 @@ impl TestServer {
         fs::write(sully_cache.path().join(file_name), contents).unwrap();
 
         let db = Arc::new(db);
+        // Without a token every Twitch lookup fails fast, so the tests never
+        // reach the network.
+        let twitch = Twitch::new();
+        let sully = SullyGnome::new(UNREACHABLE_SULLYGNOME, sully_cache.path()).unwrap();
         let app = App {
-            helix_client: HelixClient::default(),
-            // Without a token every Twitch lookup fails fast, so the tests
-            // never reach the network.
-            token: Arc::new(RwLock::new(None)),
-            users: UsersCache::default(),
-            badges: BadgesCache::default(),
-            sully: SullyGnome::new(UNREACHABLE_SULLYGNOME, sully_cache.path()).unwrap(),
+            twitch: twitch.clone(),
+            sully: sully.clone(),
+            tiers: Tiers::new(db.clone(), sully, twitch),
             optout_codes: Arc::default(),
             state: OperationalState::load(db.clone()).await.unwrap(),
             db,

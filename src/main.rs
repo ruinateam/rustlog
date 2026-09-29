@@ -8,19 +8,17 @@ use futures::future::try_join_all;
 use futures::{stream::FuturesUnordered, StreamExt};
 use mimalloc::MiMalloc;
 use rustlog::{
-    app::{
-        cache::{BadgesCache, UsersCache},
-        App,
-    },
+    app::App,
     bot,
     config::Config,
     maintenance,
     migrator::Migrator,
     mirror,
-    services::sully::SullyGnome,
+    services::{sully::SullyGnome, tiers::Tiers},
     state::OperationalState,
     storage::{setup_db, writer::create_writer},
-    web, ShutdownRx,
+    twitch::Twitch,
+    web,
 };
 use std::{
     env, fs,
@@ -31,20 +29,14 @@ use std::{
 #[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::{
-    sync::{broadcast, mpsc, watch, RwLock},
-    time::{sleep, timeout},
+    sync::{broadcast, mpsc, watch},
+    time::timeout,
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
-use twitch_api::{
-    twitch_oauth2::{AppAccessToken, Scope},
-    HelixClient,
-};
 use twitch_irc::login::StaticLoginCredentials;
 
 const SHUTDOWN_TIMEOUT_SECONDS: u64 = 8;
-const TOKEN_RETRY_INTERVAL_SECONDS: u64 = 5;
-const TOKEN_REFRESH_INTERVAL_SECONDS: u64 = 3600;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -176,8 +168,6 @@ async fn main() -> anyhow::Result<()> {
 async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
     let mut shutdown_rx = listen_shutdown().await;
 
-    let helix_client: HelixClient<reqwest::Client> = HelixClient::default();
-    let token = Arc::new(RwLock::new(None));
     let config = Arc::new(config);
 
     let db = Arc::new(db);
@@ -194,13 +184,13 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
     .await?;
     let (firehose_tx, _) = broadcast::channel(1024);
 
+    let twitch = Twitch::new();
+    let sully = SullyGnome::new(SullyGnome::DEFAULT_URL, SullyGnome::DEFAULT_CACHE_DIR)
+        .context("Could not create the SullyGnome client")?;
     let app = App {
-        helix_client,
-        token: token.clone(),
-        users: UsersCache::default(),
-        badges: BadgesCache::default(),
-        sully: SullyGnome::new(SullyGnome::DEFAULT_URL, SullyGnome::DEFAULT_CACHE_DIR)
-            .context("Could not create the SullyGnome client")?,
+        twitch: twitch.clone(),
+        sully: sully.clone(),
+        tiers: Tiers::new(db.clone(), sully, twitch.clone()),
         config: config.clone(),
         db,
         state,
@@ -211,7 +201,11 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
 
     let (bot_tx, bot_rx) = mpsc::channel(1);
 
-    let mut token_handle = tokio::spawn(refresh_token_loop(config, token, shutdown_rx.clone()));
+    let mut token_handle = tokio::spawn(twitch.keep_token_fresh(
+        config.client_id.clone(),
+        config.client_secret.clone(),
+        shutdown_rx.clone(),
+    ));
     let login_credentials = StaticLoginCredentials::anonymous();
     let mut bot_handle = tokio::spawn(bot::run(
         login_credentials,
@@ -283,59 +277,6 @@ async fn migrate(
 ) -> anyhow::Result<()> {
     let migrator = Migrator::new(db, source_logs_path, channel_ids).await?;
     migrator.run(jobs).await
-}
-
-async fn generate_token(config: &Config) -> anyhow::Result<AppAccessToken> {
-    let helix_client: HelixClient<reqwest::Client> = HelixClient::default();
-    let token = AppAccessToken::get_app_access_token(
-        &helix_client,
-        config.client_id.clone().into(),
-        config.client_secret.clone().into(),
-        Scope::all(),
-    )
-    .await?;
-    info!("Generated new app token");
-
-    Ok(token)
-}
-
-async fn refresh_token_loop(
-    config: Arc<Config>,
-    token: Arc<RwLock<Option<AppAccessToken>>>,
-    mut shutdown_rx: ShutdownRx,
-) {
-    loop {
-        tokio::select! {
-            result = generate_token(&config) => {
-                match result {
-                    Ok(new_token) => {
-                        *token.write().await = Some(new_token);
-                        tokio::select! {
-                            _ = sleep(Duration::from_secs(TOKEN_REFRESH_INTERVAL_SECONDS)) => {}
-                            _ = shutdown_rx.changed() => {
-                                debug!("Shutting down token refresh task");
-                                break;
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        warn!("Could not generate Twitch app token: {err:#}; retrying in {TOKEN_RETRY_INTERVAL_SECONDS}s");
-                        tokio::select! {
-                            _ = sleep(Duration::from_secs(TOKEN_RETRY_INTERVAL_SECONDS)) => {}
-                            _ = shutdown_rx.changed() => {
-                                debug!("Shutting down token refresh task");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            _ = shutdown_rx.changed() => {
-                debug!("Shutting down token refresh task");
-                break;
-            }
-        }
-    }
 }
 
 #[cfg(unix)]

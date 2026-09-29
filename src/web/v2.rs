@@ -84,7 +84,7 @@ async fn resolve_user(
         return Err(ApiProblem::invalid("login must not be empty"));
     }
 
-    let id = app.get_user_id_by_name(login).await?;
+    let id = app.twitch.get_user_id_by_name(login).await?;
     Ok(Json(ResolvedUser {
         id,
         login: login.to_owned(),
