@@ -90,7 +90,7 @@ impl TestServer {
         root.query(&format!("CREATE DATABASE {db_name}"))
             .execute()
             .await
-            .expect("Could not create the test database");
+            .expect("could not create the test database");
         let db = root.clone().with_database(&db_name);
 
         let config: Config = serde_json::from_value(json!({

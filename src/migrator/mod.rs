@@ -126,7 +126,7 @@ impl Migrator {
                                 .migrate_day(&root_path, &channel_id, date, &mut inserter)
                                 .await
                                 .with_context(|| {
-                                    format!("Could not migrate channel {channel_id} date {date}")
+                                    format!("could not migrate channel {channel_id} date {date}")
                                 })?;
 
                             total_read_bytes.fetch_add(day_bytes as u64, Ordering::SeqCst);

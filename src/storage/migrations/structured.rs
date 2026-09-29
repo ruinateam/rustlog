@@ -152,7 +152,7 @@ async fn migrate_partition(
         match StructuredMessage::from_unstructured(&unstructured_msg) {
             Ok(msg) => {
                 inserter.write(&msg).await.with_context(|| {
-                    format!("Could not write message for partition {partition}")
+                    format!("could not write message for partition {partition}")
                 })?;
 
                 let stats = inserter

@@ -87,7 +87,7 @@ pub fn init(config: &LoggingConfig) -> anyhow::Result<Option<WorkerGuard>> {
             // creates it, and complains on stderr if it is missing.
             std::fs::create_dir_all(&file.directory).with_context(|| {
                 format!(
-                    "Could not create log directory {}",
+                    "could not create log directory {}",
                     file.directory.display()
                 )
             })?;
@@ -98,7 +98,7 @@ pub fn init(config: &LoggingConfig) -> anyhow::Result<Option<WorkerGuard>> {
                 .max_log_files(file.max_files)
                 .build(&file.directory)
                 .with_context(|| {
-                    format!("Could not open log files in {}", file.directory.display())
+                    format!("could not open log files in {}", file.directory.display())
                 })?;
             let (writer, guard) = tracing_appender::non_blocking(appender);
             outputs.push(format_layer(config.format, writer, false));
