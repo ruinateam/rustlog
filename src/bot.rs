@@ -1,12 +1,12 @@
 use crate::{
+    ShutdownRx,
     app::App,
     irc::tags::{extract_channel_and_user_from_raw, extract_raw_timestamp},
     storage::message::{StructuredMessage, UnstructuredMessage},
-    ShutdownRx,
 };
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use chrono::Utc;
-use prometheus::{register_int_counter, register_int_counter_vec, IntCounter, IntCounterVec};
+use prometheus::{IntCounter, IntCounterVec, register_int_counter, register_int_counter_vec};
 use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::{
@@ -15,9 +15,9 @@ use tokio::{
 };
 use tracing::{debug, error, info, log::warn, trace};
 use twitch_irc::{
+    ClientConfig, SecureTCPTransport, TwitchIRCClient,
     login::LoginCredentials,
     message::{AsRawIRC, IRCMessage, ServerMessage},
-    ClientConfig, SecureTCPTransport, TwitchIRCClient,
 };
 
 const CHANNEL_REJOIN_INTERVAL_SECONDS: u64 = 3600;
@@ -166,10 +166,10 @@ impl Bot {
     ) -> anyhow::Result<()> {
         if let ServerMessage::Privmsg(privmsg) = &msg {
             trace!("Processing message {}", privmsg.message_text);
-            if let Some(cmd) = privmsg.message_text.strip_prefix(COMMAND_PREFIX) {
-                if let Err(err) = self.handle_command(cmd, client, &privmsg.sender.id).await {
-                    warn!("Could not handle command {cmd}: {err:#}");
-                }
+            if let Some(cmd) = privmsg.message_text.strip_prefix(COMMAND_PREFIX)
+                && let Err(err) = self.handle_command(cmd, client, &privmsg.sender.id).await
+            {
+                warn!("Could not handle command {cmd}: {err:#}");
             }
         }
 

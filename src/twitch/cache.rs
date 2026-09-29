@@ -31,35 +31,29 @@ impl UsersCache {
     }
 
     pub fn get_login(&self, id: &str) -> Option<Option<String>> {
-        if let Some(entry) = self.ids.get(id) {
-            if entry.value().0.elapsed().as_secs() > EXPIRY_INTERVAL {
-                drop(entry);
-                trace!("Removing {id} from cache");
-                self.ids.remove(id);
-                None
-            } else {
-                trace!("Using cached value for id {id}");
-                Some(entry.value().1.clone())
-            }
-        } else {
+        let entry = self.ids.get(id)?;
+        if entry.value().0.elapsed().as_secs() > EXPIRY_INTERVAL {
+            drop(entry);
+            trace!("Removing {id} from cache");
+            self.ids.remove(id);
             None
+        } else {
+            trace!("Using cached value for id {id}");
+            Some(entry.value().1.clone())
         }
     }
 
     pub fn get_id(&self, name: &str) -> Option<Option<String>> {
-        if let Some(entry) = self.logins.get(name) {
-            if entry.value().0.elapsed().as_secs() > EXPIRY_INTERVAL {
-                let key = entry.key().clone();
-                drop(entry);
-                trace!("Removing {name} from cache");
-                self.logins.remove(&key);
-                None
-            } else {
-                trace!("Using cached value for name {name}");
-                Some(entry.value().1.clone())
-            }
-        } else {
+        let entry = self.logins.get(name)?;
+        if entry.value().0.elapsed().as_secs() > EXPIRY_INTERVAL {
+            let key = entry.key().clone();
+            drop(entry);
+            trace!("Removing {name} from cache");
+            self.logins.remove(&key);
             None
+        } else {
+            trace!("Using cached value for name {name}");
+            Some(entry.value().1.clone())
         }
     }
 }

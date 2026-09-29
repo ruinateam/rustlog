@@ -4,9 +4,9 @@
 mod normalize;
 
 use axum::{
-    body::{to_bytes, Body},
-    http::{Method, Request},
     Router,
+    body::{Body, to_bytes},
+    http::{Method, Request},
 };
 use rustlog::{
     app::App,

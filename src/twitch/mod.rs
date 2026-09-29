@@ -12,12 +12,12 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::RwLock, time::sleep};
 use tracing::{debug, info, warn};
 use twitch_api::{
+    HelixClient,
     helix::{
         chat::{BadgeSet, GetChannelChatBadgesRequest, GetGlobalChatBadgesRequest},
         users::GetUsersRequest,
     },
     twitch_oauth2::{AppAccessToken, Scope},
-    HelixClient,
 };
 
 const TOKEN_RETRY_INTERVAL: Duration = Duration::from_secs(5);

@@ -1,22 +1,22 @@
 use crate::{
+    ShutdownRx,
     app::App,
     storage::message::StructuredMessage,
     web::responders::logs::message::{BasicMessage, ResponseMessage},
-    ShutdownRx,
 };
 use axum::{
+    Extension,
     extract::{
-        ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade},
         Query, State,
+        ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade},
     },
     http::StatusCode,
     response::Response,
-    Extension,
 };
 use futures::{SinkExt, StreamExt};
 use prometheus::{
-    register_int_counter, register_int_counter_vec, register_int_gauge, IntCounter, IntCounterVec,
-    IntGauge,
+    IntCounter, IntCounterVec, IntGauge, register_int_counter, register_int_counter_vec,
+    register_int_gauge,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -195,7 +195,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_message, FirehoseFormat};
+    use super::{FirehoseFormat, encode_message};
     use crate::storage::message::{StructuredMessage, UnstructuredMessage};
 
     fn sample_message() -> StructuredMessage<'static> {

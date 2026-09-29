@@ -145,7 +145,9 @@ impl<'a> StructuredMessage<'a> {
                         .map(|(_, value)| value)
                     {
                         Some(ban_duration) => {
-                            format!("{cleared_user_login} has been timed out for {ban_duration} seconds")
+                            format!(
+                                "{cleared_user_login} has been timed out for {ban_duration} seconds"
+                            )
                         }
                         None => {
                             format!("{cleared_user_login} has been banned")
@@ -610,6 +612,7 @@ mod tests {
         let reconstructed_irc = structured.to_raw_irc();
         assert_eq!(
             "@tmi-sent-ts=1738454043142;room-id=84180052;user-id=71092938;target-user-id=71092938 :tmi.twitch.tv CLEARCHAT #brian6932 :xqc",
-            reconstructed_irc);
+            reconstructed_irc
+        );
     }
 }

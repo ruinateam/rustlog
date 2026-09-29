@@ -1,6 +1,6 @@
-use crate::storage::stream::LogsStream;
 use crate::storage::Result;
-use futures::{stream::TryChunks, Future, Stream, StreamExt, TryStreamExt};
+use crate::storage::stream::LogsStream;
+use futures::{Future, Stream, StreamExt, TryStreamExt, stream::TryChunks};
 use std::{
     fmt::Write,
     pin::Pin,

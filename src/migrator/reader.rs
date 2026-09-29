@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::{
     collections::BTreeMap,
     fs::{self, read_dir},
@@ -81,11 +81,10 @@ impl LogsReader {
 
                         if let Ok(metadata) = fs::metadata(uncompressed_channel_file_path)
                             .or_else(|_| fs::metadata(compressed_channel_file_path))
+                            && metadata.is_file()
                         {
-                            if metadata.is_file() {
-                                total_size += metadata.len();
-                                days.push(day);
-                            }
+                            total_size += metadata.len();
+                            days.push(day);
                         }
                     }
 

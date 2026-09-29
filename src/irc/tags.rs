@@ -7,10 +7,7 @@ pub trait MessageWithTags {
 
 impl MessageWithTags for IRCMessage {
     fn get_tag(&self, key: Tag) -> Option<&str> {
-        self.tags
-            .0
-            .get(key.as_str())
-            .map(String::as_str)
+        self.tags.0.get(key.as_str()).map(String::as_str)
     }
 }
 

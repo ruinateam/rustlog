@@ -6,7 +6,7 @@ pub use buffer_response::FlushBufferResponse;
 use cursor::CursorStream;
 use multi_query::MultiQueryStream;
 
-use crate::storage::{message::StructuredMessage, Error, Result};
+use crate::storage::{Error, Result, message::StructuredMessage};
 use clickhouse::query::RowCursor;
 use futures::{Stream, StreamExt};
 use std::{

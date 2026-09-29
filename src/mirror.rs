@@ -1,21 +1,21 @@
 use crate::{
     state::OperationalState,
-    storage::message::{MessageFlags, MessageType, StructuredMessage, MESSAGES_STRUCTURED_TABLE},
+    storage::message::{MESSAGES_STRUCTURED_TABLE, MessageFlags, MessageType, StructuredMessage},
 };
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use clickhouse::{Client, Row};
 use dashmap::DashSet;
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use rand::RngExt;
 use reqwest::{Client as HttpClient, StatusCode};
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -1028,7 +1028,7 @@ fn map_message(channel_login: &str, msg: RemoteMessage) -> MapResult {
 
 #[cfg(test)]
 mod tests {
-    use super::{map_message, parse_message_id, MapResult, RemoteMessage};
+    use super::{MapResult, RemoteMessage, map_message, parse_message_id};
     use std::collections::HashMap;
     use uuid::Uuid;
 

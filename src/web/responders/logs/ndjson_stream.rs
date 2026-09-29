@@ -1,7 +1,7 @@
 use super::message::{BasicMessage, ResponseMessage};
-use crate::storage::stream::LogsStream;
 use crate::storage::Result;
-use futures::{stream::TryChunks, Future, Stream, StreamExt, TryStreamExt};
+use crate::storage::stream::LogsStream;
+use futures::{Future, Stream, StreamExt, TryStreamExt, stream::TryChunks};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::{
     pin::Pin,

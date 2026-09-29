@@ -12,10 +12,10 @@ use self::{
 use crate::storage::stream::LogsStream;
 use aide::OperationOutput;
 use axum::{
+    Json,
     body::Body,
     http::HeaderValue,
     response::{IntoResponse, IntoResponseParts, Response},
-    Json,
 };
 use futures::TryStreamExt;
 use indexmap::IndexMap;

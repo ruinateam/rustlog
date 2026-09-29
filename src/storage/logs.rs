@@ -1,15 +1,15 @@
 //! Reading, searching and deleting stored chat messages.
 
 use super::{
+    ACTIVE_USER_OPT_OUT_PREDICATE,
     message::StructuredMessage,
     stream::{FlushBufferResponse, LogsStream},
     writer::FlushBuffer,
-    ACTIVE_USER_OPT_OUT_PREDICATE,
 };
 use crate::domain::logs::LogsQuery;
 use crate::storage::{Error, Result};
 use chrono::{DateTime, Duration, Utc};
-use clickhouse::{query::RowCursor, Client};
+use clickhouse::{Client, query::RowCursor};
 use rand::{rng, seq::IteratorRandom};
 use tracing::debug;
 
@@ -27,7 +27,9 @@ pub async fn read_channel(
 
     let suffix = if logs_query.reverse { "DESC" } else { "ASC" };
 
-    let mut query = format!("SELECT ?fields FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp >= ? AND timestamp < ? ORDER BY timestamp {suffix}");
+    let mut query = format!(
+        "SELECT ?fields FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp >= ? AND timestamp < ? ORDER BY timestamp {suffix}"
+    );
 
     if to - from > Duration::days(CHANNEL_MULTI_QUERY_SIZE_DAYS) {
         let count = db
@@ -115,7 +117,9 @@ pub async fn read_user(
     .await;
 
     let suffix = if logs_query.reverse { "DESC" } else { "ASC" };
-    let mut query = format!("SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp >= ? AND timestamp < ? ORDER BY timestamp {suffix}");
+    let mut query = format!(
+        "SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp >= ? AND timestamp < ? ORDER BY timestamp {suffix}"
+    );
     apply_limit_offset(&mut query, &buffer_response);
 
     let cursor = db
@@ -235,7 +239,9 @@ pub async fn search_user_logs(
 
     let suffix = if logs_query.reverse { "DESC" } else { "ASC" };
 
-    let mut query = format!("SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND positionCaseInsensitive(text, ?) != 0 ORDER BY timestamp {suffix}");
+    let mut query = format!(
+        "SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND positionCaseInsensitive(text, ?) != 0 ORDER BY timestamp {suffix}"
+    );
     apply_limit_offset(&mut query, &buffer_response);
 
     let cursor = db

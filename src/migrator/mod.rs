@@ -1,13 +1,13 @@
 mod reader;
 
-use self::reader::{LogsReader, COMPRESSED_CHANNEL_FILE, UNCOMPRESSED_CHANNEL_FILE};
+use self::reader::{COMPRESSED_CHANNEL_FILE, LogsReader, UNCOMPRESSED_CHANNEL_FILE};
 use crate::{
     irc::tags::{extract_raw_timestamp, extract_user_id},
     migrator::reader::ChannelLogDateMap,
     state::OperationalState,
-    storage::message::{StructuredMessage, UnstructuredMessage, MESSAGES_STRUCTURED_TABLE},
+    storage::message::{MESSAGES_STRUCTURED_TABLE, StructuredMessage, UnstructuredMessage},
 };
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use chrono::{DateTime, Datelike, TimeZone, Utc};
 use clickhouse::inserter::Inserter;
 use flate2::bufread::GzDecoder;
@@ -18,8 +18,8 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };

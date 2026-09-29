@@ -44,10 +44,10 @@ impl App {
             return Err(OptedOut::Channel);
         }
 
-        if let Some(user_id) = user_id {
-            if self.state.is_user_opted_out(user_id) {
-                return Err(OptedOut::User);
-            }
+        if let Some(user_id) = user_id
+            && self.state.is_user_opted_out(user_id)
+        {
+            return Err(OptedOut::User);
         }
 
         Ok(())

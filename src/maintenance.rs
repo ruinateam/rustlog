@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use chrono::{Datelike, NaiveDate};
 use clickhouse::{Client, Row};
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use serde::Deserialize;
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},

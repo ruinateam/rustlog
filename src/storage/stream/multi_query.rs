@@ -1,6 +1,6 @@
 use super::FlushBufferResponse;
-use crate::storage::message::StructuredMessage;
 use crate::storage::Result;
+use crate::storage::message::StructuredMessage;
 use clickhouse::query::RowCursor;
 use futures::{Future, Stream};
 use std::{
@@ -54,10 +54,10 @@ impl Stream for MultiQueryStream {
             }
         }
 
-        if let Some(limit) = self.limit {
-            if self.count >= limit {
-                return Poll::Ready(None);
-            }
+        if let Some(limit) = self.limit
+            && self.count >= limit
+        {
+            return Poll::Ready(None);
         }
 
         let current = self.current;
@@ -76,10 +76,10 @@ impl Stream for MultiQueryStream {
 
                 match next_line_poll {
                     Poll::Ready(Ok(Some(msg))) => {
-                        if let Some(offset) = self.offset {
-                            if self.count < offset {
-                                return self.poll_next(cx);
-                            }
+                        if let Some(offset) = self.offset
+                            && self.count < offset
+                        {
+                            return self.poll_next(cx);
                         }
 
                         self.count += 1;

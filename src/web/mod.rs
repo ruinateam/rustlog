@@ -10,26 +10,26 @@ mod v2;
 
 use self::handlers::no_cache_header;
 use crate::{
+    ShutdownRx,
     app::App,
     bot::BotMessage,
-    web::admin::{admin_auth, AdminApiKey},
-    ShutdownRx,
+    web::admin::{AdminApiKey, admin_auth},
 };
 use aide::{
     axum::{
-        routing::{get, get_with, post, post_with},
         ApiRouter, IntoApiResponse,
+        routing::{get, get_with, post, post_with},
     },
     openapi::{Info, OpenApi, Operation, ParameterSchemaOrContent, ReferenceOr, Server},
     scalar::Scalar,
 };
 use axum::{
+    Extension, Json, Router, ServiceExt,
     extract::Request,
     http::StatusCode,
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::any,
-    Extension, Json, Router, ServiceExt,
 };
 use axum_prometheus::PrometheusMetricLayerBuilder;
 use prometheus::TextEncoder;
@@ -41,8 +41,8 @@ use std::{
 };
 use tokio::{net::TcpListener, sync::mpsc::Sender};
 use tower_http::{
-    compression::CompressionLayer, cors::CorsLayer, normalize_path::NormalizePath,
-    trace::TraceLayer, CompressionLevel,
+    CompressionLevel, compression::CompressionLayer, cors::CorsLayer,
+    normalize_path::NormalizePath, trace::TraceLayer,
 };
 use tracing::{debug, info};
 

@@ -1,11 +1,11 @@
 mod args;
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use args::{Args, Command};
 use clap::Parser;
 use futures::future::try_join_all;
 #[cfg(unix)]
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, stream::FuturesUnordered};
 use mimalloc::MiMalloc;
 use rustlog::{
     app::App,
@@ -27,7 +27,7 @@ use std::{
     time::{Duration, Instant},
 };
 #[cfg(unix)]
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::{
     sync::{broadcast, mpsc, watch},
     time::timeout,

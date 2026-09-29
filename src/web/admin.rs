@@ -6,10 +6,10 @@ use aide::{
     transform::TransformOperation,
 };
 use axum::{
+    Extension, Json,
     extract::{Request, State},
     middleware::Next,
     response::{IntoResponse, Response},
-    Extension, Json,
 };
 use reqwest::StatusCode;
 use schemars::JsonSchema;
@@ -27,16 +27,15 @@ pub async fn admin_auth(
     request: Request,
     next: Next,
 ) -> Result<Response, impl IntoResponse> {
-    if let Some(admin_key) = admin_key {
-        if request
+    if let Some(admin_key) = admin_key
+        && request
             .headers()
             .get("X-Api-Key")
             .and_then(|value| value.to_str().ok())
             == Some(&*admin_key)
-        {
-            let response = next.run(request).await;
-            return Ok(response);
-        }
+    {
+        let response = next.run(request).await;
+        return Ok(response);
     }
 
     Err((StatusCode::FORBIDDEN, "No, I don't think so"))

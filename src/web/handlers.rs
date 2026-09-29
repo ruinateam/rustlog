@@ -12,20 +12,20 @@ use super::{
 use crate::web::error::{Error, Result};
 use crate::{
     app::App,
-    domain::tiers::{RankedTiers, TierPeriod, TIMEZONE},
+    domain::tiers::{RankedTiers, TIMEZONE, TierPeriod},
     services::{self, sully, tiers::TierQuery},
     storage::{availability, logs, stats, stream::LogsStream},
     web::schema::{LogRangeParams, LogsPathDate, SullyStreamsResponse, TierModeQuery},
 };
 use aide::axum::IntoApiResponse;
 use axum::{
+    Json,
     extract::{Path, Query, RawQuery, State},
     response::{IntoResponse, Redirect, Response},
-    Json,
 };
-use axum_extra::{headers::CacheControl, TypedHeader};
+use axum_extra::{TypedHeader, headers::CacheControl};
 use chrono::{DateTime, Datelike, Days, Months, NaiveDate, NaiveTime, Utc};
-use rand::{distr::Alphanumeric, rng, RngExt};
+use rand::{RngExt, distr::Alphanumeric, rng};
 use std::time::Duration;
 use tracing::debug;
 
@@ -346,7 +346,7 @@ async fn get_channel_logs_inner(
     channel_id: &str,
     params: LogsParams,
     range: (DateTime<Utc>, DateTime<Utc>),
-) -> Result<impl IntoApiResponse> {
+) -> Result<impl IntoApiResponse + use<>> {
     app.check_opted_out(channel_id, None)?;
 
     let stream = logs::read_channel(
@@ -435,7 +435,7 @@ async fn get_user_logs_inner(
     user_id: &str,
     logs_params: LogsParams,
     range: (DateTime<Utc>, DateTime<Utc>),
-) -> Result<impl IntoApiResponse> {
+) -> Result<impl IntoApiResponse + use<>> {
     let stream = logs::read_user(
         &app.db,
         channel_id,

@@ -4,11 +4,11 @@ use super::sully::{Stream, SullyGnome};
 use crate::{
     domain::{
         logs::TimeRange,
-        tiers::{filter_bots, rank, RankedTiers, TierMode, TierPeriod, UserWindows},
+        tiers::{RankedTiers, TierMode, TierPeriod, UserWindows, filter_bots, rank},
     },
     storage::{
-        tiers::{user_windows, CalendarPeriod, StreamFilter},
         Result,
+        tiers::{CalendarPeriod, StreamFilter, user_windows},
     },
     twitch::Twitch,
 };

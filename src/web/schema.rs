@@ -8,10 +8,10 @@ use crate::{
     services::sully::{Stream, StreamList},
 };
 use chrono::{DateTime, Utc};
-use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{
-    de::{Error as DeError, SeqAccess, Visitor},
     Deserialize, Deserializer, Serialize,
+    de::{Error as DeError, SeqAccess, Visitor},
 };
 use std::fmt::Display;
 use strum::Display;

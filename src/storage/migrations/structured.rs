@@ -1,11 +1,11 @@
 use super::migratable::Migratable;
-use crate::storage::message::{StructuredMessage, UnstructuredMessage, MESSAGES_STRUCTURED_TABLE};
-use anyhow::{bail, Context};
+use crate::storage::message::{MESSAGES_STRUCTURED_TABLE, StructuredMessage, UnstructuredMessage};
+use anyhow::{Context, bail};
 use std::{
     env,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };

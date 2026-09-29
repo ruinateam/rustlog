@@ -1,7 +1,7 @@
 //! Errors of the legacy API, answered with a plain text body.
 
 use crate::{domain::opt_out::OptedOut, storage, twitch};
-use aide::{openapi::MediaType, OperationOutput};
+use aide::{OperationOutput, openapi::MediaType};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},

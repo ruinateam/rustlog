@@ -1,17 +1,17 @@
 use super::message::StructuredMessage;
-use crate::{state::OperationalState, storage::message::MESSAGES_STRUCTURED_TABLE, ShutdownRx};
-use anyhow::{anyhow, Context};
+use crate::{ShutdownRx, state::OperationalState, storage::message::MESSAGES_STRUCTURED_TABLE};
+use anyhow::{Context, anyhow};
 use clickhouse::Client;
-use prometheus::{register_int_gauge, IntGauge};
+use prometheus::{IntGauge, register_int_gauge};
 use std::sync::LazyLock;
 use std::{ops::Range, sync::Arc, time::Duration};
 use tokio::{
     sync::{
-        mpsc::{channel, Sender},
         RwLock,
+        mpsc::{Sender, channel},
     },
     task::JoinHandle,
-    time::{sleep, Instant},
+    time::{Instant, sleep},
 };
 use tracing::{debug, error, info, trace};
 
@@ -137,7 +137,9 @@ async fn write_chunk_with_retry(
                 return Ok(());
             }
             Err(err) => {
-                error!("Could not insert chunk: {err:#} (attempt {attempt}/{RETRY_COUNT}, retrying in {RETRY_INTERVAL_SECONDS} seconds)");
+                error!(
+                    "Could not insert chunk: {err:#} (attempt {attempt}/{RETRY_COUNT}, retrying in {RETRY_INTERVAL_SECONDS} seconds)"
+                );
                 sleep(Duration::from_secs(RETRY_INTERVAL_SECONDS)).await;
             }
         }

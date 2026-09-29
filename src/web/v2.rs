@@ -13,16 +13,16 @@ use crate::{
     web::error::Error,
 };
 use aide::{
-    axum::{routing::get_with, ApiRouter, IntoApiResponse},
+    OperationOutput,
+    axum::{ApiRouter, IntoApiResponse, routing::get_with},
     openapi::OpenApi,
     scalar::Scalar,
-    OperationOutput,
 };
 use axum::{
-    extract::{Path, Query, State},
-    http::{header::CONTENT_TYPE, HeaderValue, StatusCode},
-    response::{Html, IntoResponse, Response},
     Extension, Json,
+    extract::{Path, Query, State},
+    http::{HeaderValue, StatusCode, header::CONTENT_TYPE},
+    response::{Html, IntoResponse, Response},
 };
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;

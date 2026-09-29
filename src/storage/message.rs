@@ -11,7 +11,7 @@ use uuid::Uuid;
 pub const MESSAGES_STRUCTURED_TABLE: &str = "message_structured";
 
 mod datetime64_millis_u64 {
-    use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 
     pub fn serialize<S>(timestamp: &u64, serializer: S) -> Result<S::Ok, S::Error>
     where

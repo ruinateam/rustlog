@@ -3,7 +3,7 @@ use axum::{
     response::Response,
 };
 use std::time::Duration;
-use tracing::{info, info_span, Span};
+use tracing::{Span, info, info_span};
 
 pub fn make_span_with(request: &Request) -> Span {
     let method = request.method().to_string();

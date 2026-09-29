@@ -1,7 +1,7 @@
 use super::message::{BasicMessage, FullMessage, ResponseMessage};
 use crate::storage::Result;
 use crate::{storage::message::StructuredMessage, storage::stream::LogsStream};
-use futures::{stream::TryChunks, Future, Stream, StreamExt, TryStreamExt};
+use futures::{Future, Stream, StreamExt, TryStreamExt, stream::TryChunks};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::{
     collections::VecDeque,
@@ -130,7 +130,7 @@ impl Stream for JsonLogsStream {
 mod tests {
     use super::{JsonLogsStream, JsonResponseType};
     use crate::storage::stream::LogsStream;
-    use futures::{executor::block_on, StreamExt};
+    use futures::{StreamExt, executor::block_on};
 
     #[test]
     fn empty_stream_is_a_valid_json_document() {

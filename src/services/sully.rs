@@ -6,8 +6,8 @@
 //! unreachable.
 
 use reqwest::{
-    header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT},
     Client as HttpClient,
+    header::{ACCEPT, HeaderMap, HeaderValue, USER_AGENT},
 };
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, time::Duration};
