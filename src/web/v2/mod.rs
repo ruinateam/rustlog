@@ -211,7 +211,29 @@ fn routes() -> ApiRouter<App> {
             "/opt-out-codes",
             post_with(admin::create_opt_out_code, |op| {
                 describe(op, "createOptOutCode", "Opt-out", "Create an opt-out code",
-                    "A code that opts its sender out of logging when written as `!rustlog optout <code>` in a logged chat before it expires.")
+                    "A one-time code for a chat command in a logged chat, valid for a minute: `!rustlog optout <code>` stops logging the sender and deletes their messages, `!rustlog optin <code>` logs them again. A broadcaster can hide their channel with `!rustlog optout-channel <code>` in its own chat, and show it again with `!rustlog optin-channel <code>`.")
+            }),
+        )
+        .api_route(
+            "/admin/channels/{channelId}/opt-out",
+            put_with(admin::opt_out_channel, |op| {
+                describe(op, "optOutChannel", "Admin", "Opt a channel out",
+                    "Stops logging the channel and hides its logs, which are kept. The bot stays in the chat, so that the broadcaster can opt back in there.")
+            })
+            .delete_with(admin::opt_in_channel, |op| {
+                describe(op, "optInChannel", "Admin", "Opt a channel back in",
+                    "Logs the channel again and shows its logs, including those from before the opt-out.")
+            }),
+        )
+        .api_route(
+            "/admin/users/{userId}/opt-out",
+            put_with(admin::opt_out_user, |op| {
+                describe(op, "optOutUser", "Admin", "Opt a user out",
+                    "Stops logging the user and deletes their messages and logins in every channel.")
+            })
+            .delete_with(admin::opt_in_user, |op| {
+                describe(op, "optInUser", "Admin", "Opt a user back in",
+                    "Logs the user again from now on; messages deleted by the opt-out stay deleted.")
             }),
         )
         .api_route(

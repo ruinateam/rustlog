@@ -1,6 +1,10 @@
 //! Admin endpoints, behind the `X-Api-Key` header, and opt-out codes.
 
-use super::{extract::Path, params::ChannelPath, problem::ApiProblem};
+use super::{
+    extract::Path,
+    params::{ChannelPath, UserPath},
+    problem::ApiProblem,
+};
 use crate::{
     app::{App, BotMessage},
     web::AdminApiKey,
@@ -128,6 +132,50 @@ pub async fn leave_channel(
     Ok(NoContent)
 }
 
+pub async fn opt_out_channel(
+    _: Admin,
+    State(app): State<App>,
+    Path(path): Path<ChannelPath>,
+) -> Result<NoContent, ApiProblem> {
+    app.opt_out_channel(path.channel_id.as_str())
+        .await
+        .map_err(|error| ApiProblem::internal(error.as_ref()))?;
+    Ok(NoContent)
+}
+
+pub async fn opt_in_channel(
+    _: Admin,
+    State(app): State<App>,
+    Path(path): Path<ChannelPath>,
+) -> Result<NoContent, ApiProblem> {
+    app.opt_in_channel(path.channel_id.as_str())
+        .await
+        .map_err(|error| ApiProblem::internal(error.as_ref()))?;
+    Ok(NoContent)
+}
+
+pub async fn opt_out_user(
+    _: Admin,
+    State(app): State<App>,
+    Path(path): Path<UserPath>,
+) -> Result<NoContent, ApiProblem> {
+    app.opt_out_user(path.user_id.as_str())
+        .await
+        .map_err(|error| ApiProblem::internal(error.as_ref()))?;
+    Ok(NoContent)
+}
+
+pub async fn opt_in_user(
+    _: Admin,
+    State(app): State<App>,
+    Path(path): Path<UserPath>,
+) -> Result<NoContent, ApiProblem> {
+    app.opt_in_user(path.user_id.as_str())
+        .await
+        .map_err(|error| ApiProblem::internal(error.as_ref()))?;
+    Ok(NoContent)
+}
+
 /// The bot joins and leaves channels by login.
 async fn channel_login(app: &App, channel_id: &str) -> Result<String, ApiProblem> {
     app.twitch
@@ -141,7 +189,8 @@ async fn channel_login(app: &App, channel_id: &str) -> Result<String, ApiProblem
 #[derive(Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OptOutCode {
-    /// Write `!rustlog optout <code>` in a logged chat to opt out.
+    /// Write `!rustlog optout <code>` in a logged chat to opt out, or one of
+    /// `optin`, `optout-channel` and `optin-channel`.
     pub code: String,
     pub expires_at: DateTime<Utc>,
 }

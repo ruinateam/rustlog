@@ -1,10 +1,14 @@
+mod command;
+
+use self::command::{Command, OptOutChange};
 use crate::{
     ShutdownRx,
     app::{App, BotMessage},
     irc::tags::{extract_channel_and_user_from_raw, extract_raw_timestamp},
+    state::OptOutScope,
     storage::message::{StructuredMessage, UnstructuredMessage},
 };
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use chrono::Utc;
 use prometheus::{IntCounter, IntCounterVec, register_int_counter, register_int_counter_vec};
 use std::sync::LazyLock;
@@ -41,8 +45,6 @@ static FIREHOSE_MESSAGES_PUBLISHED: LazyLock<IntCounter> = LazyLock::new(|| {
     )
     .unwrap()
 });
-
-const COMMAND_PREFIX: &str = "!rustlog ";
 
 pub async fn run<C: LoginCredentials>(
     login_credentials: C,
@@ -160,10 +162,16 @@ impl Bot {
     ) -> anyhow::Result<()> {
         if let ServerMessage::Privmsg(privmsg) = &msg {
             trace!(text = %privmsg.message_text, "processing message");
-            if let Some(cmd) = privmsg.message_text.strip_prefix(COMMAND_PREFIX)
-                && let Err(err) = self.handle_command(cmd, client, &privmsg.sender.id).await
+            if let Some(command) = command::parse(&privmsg.message_text)
+                && let Err(err) = self
+                    .handle_command(command, client, &privmsg.sender.id, &privmsg.channel_id)
+                    .await
             {
-                warn!(command = %cmd, error = format!("{err:#}"), "could not handle chat command");
+                warn!(
+                    command = %privmsg.message_text,
+                    error = format!("{err:#}"),
+                    "could not handle chat command"
+                );
             }
         }
 
@@ -235,50 +243,53 @@ impl Bot {
 
     async fn handle_command<C: LoginCredentials>(
         &self,
-        cmd: &str,
+        command: Command<'_>,
         client: &TwitchClient<C>,
         sender_id: &str,
+        channel_id: &str,
     ) -> anyhow::Result<()> {
-        debug!(command = %cmd, "processing chat command");
-        let mut split = cmd.split_whitespace();
-        if let Some(action) = split.next() {
-            let args: Vec<&str> = split.collect();
-
-            match action {
-                "join" => {
-                    self.check_admin(sender_id)?;
-                    self.update_channels(client, &args, ChannelAction::Join)
-                        .await?
-                }
-                "leave" | "part" => {
-                    self.check_admin(sender_id)?;
-                    self.update_channels(client, &args, ChannelAction::Part)
-                        .await?
-                }
-                "optout" => {
-                    self.optout_user(&args, sender_id).await?;
-                }
-                _ => (),
+        debug!(?command, "processing chat command");
+        match command {
+            Command::Join(channels) => {
+                self.check_admin(sender_id)?;
+                self.update_channels(client, &channels, ChannelAction::Join)
+                    .await
             }
+            Command::Leave(channels) => {
+                self.check_admin(sender_id)?;
+                self.update_channels(client, &channels, ChannelAction::Part)
+                    .await
+            }
+            Command::OptOut(change) => self.change_opt_out(change, sender_id, channel_id).await,
         }
-
-        Ok(())
     }
 
-    async fn optout_user(&self, args: &[&str], sender_id: &str) -> anyhow::Result<()> {
-        let arg = args.first().context("no optout code provided")?;
-        if self.app.optout_codes.remove(*arg).is_some() {
-            self.app.optout_user(sender_id).await?;
-
-            Ok(())
+    /// With an opt-out code, the sender opts themselves out or back in, or a
+    /// broadcaster their channel in its own chat. Admins can name anyone by
+    /// login instead.
+    async fn change_opt_out(
+        &self,
+        change: OptOutChange<'_>,
+        sender_id: &str,
+        channel_id: &str,
+    ) -> anyhow::Result<()> {
+        let subject_id = if self.app.optout_codes.contains(change.argument) {
+            let subject_id = command::code_subject(change.scope, sender_id, channel_id)
+                .map_err(|reason| anyhow!(reason))?
+                .to_owned();
+            self.app.optout_codes.remove(change.argument);
+            subject_id
         } else if self.check_admin(sender_id).is_ok() {
-            let user_id = self.app.twitch.get_user_id_by_name(arg).await?;
-
-            self.app.optout_user(&user_id).await?;
-
-            Ok(())
+            self.app.twitch.get_user_id_by_name(change.argument).await?
         } else {
-            Err(anyhow!("invalid optout code"))
+            return Err(anyhow!("invalid opt-out code"));
+        };
+
+        match (change.scope, change.opted_out) {
+            (OptOutScope::User, true) => self.app.opt_out_user(&subject_id).await,
+            (OptOutScope::User, false) => self.app.opt_in_user(&subject_id).await,
+            (OptOutScope::Channel, true) => self.app.opt_out_channel(&subject_id).await,
+            (OptOutScope::Channel, false) => self.app.opt_in_channel(&subject_id).await,
         }
     }
 

@@ -199,7 +199,12 @@ impl TestRequest {
     /// relevant headers and the normalized body.
     pub async fn send(self) -> String {
         let server = TestServer::start().await;
+        let rendered = self.send_to(&server).await;
+        server.stop().await;
+        rendered
+    }
 
+    async fn send_to(self, server: &TestServer) -> String {
         let mut request = Request::builder().method(&self.method).uri(&self.path);
         for (name, value) in &self.headers {
             request = request.header(*name, *value);
@@ -228,8 +233,18 @@ impl TestRequest {
         } else {
             rendered.push_str("<body omitted>");
         }
-
-        server.stop().await;
         rendered
     }
+}
+
+/// Sends the requests one after another to the same fresh server, for
+/// scenarios where a request changes what the next ones see.
+pub async fn in_sequence(requests: impl IntoIterator<Item = TestRequest>) -> String {
+    let server = TestServer::start().await;
+    let mut rendered = Vec::new();
+    for request in requests {
+        rendered.push(request.send_to(&server).await);
+    }
+    server.stop().await;
+    rendered.join("\n===\n")
 }

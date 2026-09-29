@@ -6,7 +6,7 @@ use crate::{
 };
 use insta::assert_snapshot;
 use rustlog::{
-    state::OperationalState,
+    state::{OperationalState, OptOutScope},
     tools::mirror::{self, MirrorOptions, TransferOptions},
 };
 use serde_json::json;
@@ -99,7 +99,10 @@ async fn skips_opted_out_users() {
     let state = OperationalState::load(Arc::new(test_db.db.clone()))
         .await
         .unwrap();
-    state.optout_user("33333").await.unwrap();
+    state
+        .set_opted_out(OptOutScope::User, "33333", true)
+        .await
+        .unwrap();
     let cache = local_cache();
 
     mirror::run(test_db.db.clone(), options("unused", Some(cache.path())))

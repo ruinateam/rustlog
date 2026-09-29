@@ -2,7 +2,7 @@ use crate::{
     config::Config,
     domain::opt_out::OptedOut,
     services::{sully::SullyGnome, tiers::Tiers},
-    state::OperationalState,
+    state::{OperationalState, OptOutScope},
     storage::{logs::delete_user_logs, message::StructuredMessage, writer::FlushBuffer},
     twitch::Twitch,
 };
@@ -34,15 +34,45 @@ pub struct App {
 }
 
 impl App {
-    pub async fn optout_user(&self, user_id: &str) -> anyhow::Result<()> {
-        self.state.optout_user(user_id).await?;
+    /// Stops logging the user and deletes their messages and logins.
+    pub async fn opt_out_user(&self, user_id: &str) -> anyhow::Result<()> {
+        self.state
+            .set_opted_out(OptOutScope::User, user_id, true)
+            .await?;
         self.flush_buffer.remove_user(user_id).await;
         delete_user_logs(&self.db, user_id)
             .await
             .context("could not delete logs")?;
 
         info!(user_id, "user opted out");
+        Ok(())
+    }
 
+    /// Logs the user again from now on; deleted messages stay deleted.
+    pub async fn opt_in_user(&self, user_id: &str) -> anyhow::Result<()> {
+        self.state
+            .set_opted_out(OptOutScope::User, user_id, false)
+            .await?;
+        info!(user_id, "user opted back in");
+        Ok(())
+    }
+
+    /// Stops logging the channel and hides its logs; nothing is deleted.
+    /// The bot stays in the chat, so that the channel can opt back in there.
+    pub async fn opt_out_channel(&self, channel_id: &str) -> anyhow::Result<()> {
+        self.state
+            .set_opted_out(OptOutScope::Channel, channel_id, true)
+            .await?;
+        info!(channel_id, "channel opted out");
+        Ok(())
+    }
+
+    /// Logs the channel again and shows its logs, including the old ones.
+    pub async fn opt_in_channel(&self, channel_id: &str) -> anyhow::Result<()> {
+        self.state
+            .set_opted_out(OptOutScope::Channel, channel_id, false)
+            .await?;
+        info!(channel_id, "channel opted back in");
         Ok(())
     }
 

@@ -70,7 +70,13 @@ pub async fn users(
 }
 
 pub async fn channels(State(app): State<App>) -> Result<Cached<Json<Channels>>, ApiProblem> {
-    let ids = app.state.channel_ids().into_iter().collect();
+    // Channels that opted out stay joined, to hear an opt-in, but are hidden.
+    let ids = app
+        .state
+        .channel_ids()
+        .into_iter()
+        .filter(|id| !app.state.is_channel_opted_out(id))
+        .collect();
     let found = app.twitch.get_users(ids, Vec::new(), false).await?;
     Ok(Cached::no_cache(Json(Channels {
         channels: sorted_users(found),

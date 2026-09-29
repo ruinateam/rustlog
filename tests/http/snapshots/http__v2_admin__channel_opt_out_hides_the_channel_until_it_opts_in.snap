@@ -1,0 +1,58 @@
+---
+source: tests/http/v2_admin.rs
+expression: "in_sequence([request(Method::PUT, CHANNEL_OPT_OUT).admin_key(),\nget(\"/api/v2/channels/11111/log-dates\"),\nget(\"/api/v2/channels/11111/tiers/2026-03\"), get(\"/api/v2/channels\"),\nrequest(Method::DELETE, CHANNEL_OPT_OUT).admin_key(),\nget(\"/api/v2/channels/11111/log-dates\"),]).await"
+---
+PUT /api/v2/admin/channels/11111/opt-out
+status: 204 No Content
+---
+
+===
+GET /api/v2/channels/11111/log-dates
+status: 403 Forbidden
+content-type: application/problem+json
+---
+{
+  "code": "opted_out",
+  "detail": "the channel opted out of logging",
+  "status": 403,
+  "title": "The requested data is unavailable"
+}
+===
+GET /api/v2/channels/11111/tiers/2026-03
+status: 403 Forbidden
+content-type: application/problem+json
+---
+{
+  "code": "opted_out",
+  "detail": "the channel opted out of logging",
+  "status": 403,
+  "title": "The requested data is unavailable"
+}
+===
+GET /api/v2/channels
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "channels": []
+}
+===
+DELETE /api/v2/admin/channels/11111/opt-out
+status: 204 No Content
+---
+
+===
+GET /api/v2/channels/11111/log-dates
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "dates": [
+    "2026-03-15",
+    "2026-03-02",
+    "2026-03-01",
+    "2026-02-10"
+  ]
+}

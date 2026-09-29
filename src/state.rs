@@ -47,7 +47,7 @@ impl OperationalState {
 
         let opted_out_users = load_opted_out(&db, "user").await?;
         let opted_out_channels = load_opted_out(&db, "channel").await?;
-        let legacy_opt_out = load_opted_out(&db, "legacy").await?;
+        let legacy_opt_out = load_opted_out(&db, LEGACY_SCOPE).await?;
 
         Ok(Self {
             db,
@@ -96,21 +96,44 @@ impl OperationalState {
         self.set_channel_enabled(channel_id, false).await
     }
 
-    pub async fn optout_user(&self, user_id: &str) -> Result<()> {
+    /// Records that a user or channel opted out of logging, or back in.
+    pub async fn set_opted_out(
+        &self,
+        scope: OptOutScope,
+        subject_id: &str,
+        opted_out: bool,
+    ) -> Result<()> {
         let _transition = self.transition_lock.lock().await;
-        let revision = next_revision(&self.db, OPT_OUT_TABLE).await?;
+        let mut revision = next_revision(&self.db, OPT_OUT_TABLE).await?;
 
-        self.db
-            .query(
-                "INSERT INTO opt_out_state (scope, subject_id, opted_out, revision, changed_at) VALUES ('user', ?, 1, ?, now64(3, 'UTC'))",
-            )
-            .bind(user_id)
-            .bind(revision)
-            .execute()
-            .await?;
+        // A key of the old config opted out both the user and the channel
+        // with that id. Opting one of them back in keeps the other's state,
+        // written down on its own before the key is cleared.
+        let clears_legacy_key = !opted_out && self.legacy_opt_out.contains(subject_id);
+        if clears_legacy_key {
+            let other = scope.other();
+            write_opt_out(&self.db, other.as_str(), subject_id, true, revision).await?;
+            self.opted_out(other).insert(subject_id.to_owned());
+            revision += 1;
+            write_opt_out(&self.db, LEGACY_SCOPE, subject_id, false, revision).await?;
+            self.legacy_opt_out.remove(subject_id);
+            revision += 1;
+        }
 
-        self.opted_out_users.insert(user_id.to_owned());
+        write_opt_out(&self.db, scope.as_str(), subject_id, opted_out, revision).await?;
+        if opted_out {
+            self.opted_out(scope).insert(subject_id.to_owned());
+        } else {
+            self.opted_out(scope).remove(subject_id);
+        }
         Ok(())
+    }
+
+    fn opted_out(&self, scope: OptOutScope) -> &DashSet<String> {
+        match scope {
+            OptOutScope::User => &self.opted_out_users,
+            OptOutScope::Channel => &self.opted_out_channels,
+        }
     }
 
     async fn set_channel_enabled(&self, channel_id: &str, enabled: bool) -> Result<()> {
@@ -134,6 +157,53 @@ impl OperationalState {
         }
         Ok(())
     }
+}
+
+/// What an opt-out applies to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptOutScope {
+    /// A user's messages in every channel.
+    User,
+    /// A whole channel.
+    Channel,
+}
+
+impl OptOutScope {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Channel => "channel",
+        }
+    }
+
+    fn other(self) -> Self {
+        match self {
+            Self::User => Self::Channel,
+            Self::Channel => Self::User,
+        }
+    }
+}
+
+/// Opt-outs from the old config file, by key presence.
+const LEGACY_SCOPE: &str = "legacy";
+
+async fn write_opt_out(
+    db: &Client,
+    scope: &str,
+    subject_id: &str,
+    opted_out: bool,
+    revision: u64,
+) -> Result<()> {
+    db.query(
+        "INSERT INTO opt_out_state (scope, subject_id, opted_out, revision, changed_at) VALUES (?, ?, ?, ?, now64(3, 'UTC'))",
+    )
+    .bind(scope)
+    .bind(subject_id)
+    .bind(u8::from(opted_out))
+    .bind(revision)
+    .execute()
+    .await?;
+    Ok(())
 }
 
 #[derive(Deserialize, Row)]

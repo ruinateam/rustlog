@@ -1795,7 +1795,7 @@
           "Opt-out"
         ],
         "summary": "Create an opt-out code",
-        "description": "A code that opts its sender out of logging when written as `!rustlog optout <code>` in a logged chat before it expires.",
+        "description": "A one-time code for a chat command in a logged chat, valid for a minute: `!rustlog optout <code>` stops logging the sender and deletes their messages, `!rustlog optin <code>` logs them again. A broadcaster can hide their channel with `!rustlog optout-channel <code>` in its own chat, and show it again with `!rustlog optin-channel <code>`.",
         "operationId": "createOptOutCode",
         "responses": {
           "201": {
@@ -1804,6 +1804,398 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OptOutCode"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/channels/{channelId}/opt-out": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Opt a channel out",
+        "description": "Stops logging the channel and hides its logs, which are kept. The bot stays in the chat, so that the broadcaster can opt back in there.",
+        "operationId": "optOutChannel",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Api-Key",
+            "description": "The configured admin API key.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "no content"
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Opt a channel back in",
+        "description": "Logs the channel again and shows its logs, including those from before the opt-out.",
+        "operationId": "optInChannel",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Api-Key",
+            "description": "The configured admin API key.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "channelId",
+            "description": "Id of the channel.",
+            "required": true,
+            "schema": {
+              "description": "Id of the channel.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "no content"
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{userId}/opt-out": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Opt a user out",
+        "description": "Stops logging the user and deletes their messages and logins in every channel.",
+        "operationId": "optOutUser",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Api-Key",
+            "description": "The configured admin API key.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "Id of the user.",
+            "required": true,
+            "schema": {
+              "description": "Id of the user.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "no content"
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Opt a user back in",
+        "description": "Logs the user again from now on; messages deleted by the opt-out stay deleted.",
+        "operationId": "optInUser",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Api-Key",
+            "description": "The configured admin API key.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "Id of the user.",
+            "required": true,
+            "schema": {
+              "description": "Id of the user.",
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "no content"
+          },
+          "400": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Problem response",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
                 }
               }
             }
@@ -2903,7 +3295,7 @@
         "type": "object",
         "properties": {
           "code": {
-            "description": "Write `!rustlog optout <code>` in a logged chat to opt out.",
+            "description": "Write `!rustlog optout <code>` in a logged chat to opt out, or one of\n `optin`, `optout-channel` and `optin-channel`.",
             "type": "string"
           },
           "expiresAt": {

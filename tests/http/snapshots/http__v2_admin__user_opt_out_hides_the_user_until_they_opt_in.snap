@@ -1,0 +1,41 @@
+---
+source: tests/http/v2_admin.rs
+expression: "in_sequence([request(Method::PUT, USER_OPT_OUT).admin_key(),\nget(\"/api/v2/channels/11111/users/22222/log-months\"),\nget(\"/api/v2/channels/11111/logs?from=2026-03-01T00:00:00Z&to=2026-03-02T00:00:00Z&format=text\"),\nrequest(Method::DELETE, USER_OPT_OUT).admin_key(),\nget(\"/api/v2/channels/11111/users/22222/logs/search?q=nothing-matches\"),]).await"
+---
+PUT /api/v2/admin/users/22222/opt-out
+status: 204 No Content
+---
+
+===
+GET /api/v2/channels/11111/users/22222/log-months
+status: 403 Forbidden
+content-type: application/problem+json
+---
+{
+  "code": "opted_out",
+  "detail": "the user opted out of logging",
+  "status": 403,
+  "title": "The requested data is unavailable"
+}
+===
+GET /api/v2/channels/11111/logs?from=2026-03-01T00:00:00Z&to=2026-03-02T00:00:00Z&format=text
+status: 200 OK
+content-type: text/plain; charset=utf-8
+cache-control: no-cache
+---
+[2026-03-01 08:30:00] #testchan bob: hi alice
+
+===
+DELETE /api/v2/admin/users/22222/opt-out
+status: 204 No Content
+---
+
+===
+GET /api/v2/channels/11111/users/22222/logs/search?q=nothing-matches
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "messages": []
+}

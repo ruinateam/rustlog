@@ -315,10 +315,58 @@ export interface paths {
         put?: never;
         /**
          * Create an opt-out code
-         * @description A code that opts its sender out of logging when written as `!rustlog optout <code>` in a logged chat before it expires.
+         * @description A one-time code for a chat command in a logged chat, valid for a minute: `!rustlog optout <code>` stops logging the sender and deletes their messages, `!rustlog optin <code>` logs them again. A broadcaster can hide their channel with `!rustlog optout-channel <code>` in its own chat, and show it again with `!rustlog optin-channel <code>`.
          */
         post: operations["createOptOutCode"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/channels/{channelId}/opt-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Opt a channel out
+         * @description Stops logging the channel and hides its logs, which are kept. The bot stays in the chat, so that the broadcaster can opt back in there.
+         */
+        put: operations["optOutChannel"];
+        post?: never;
+        /**
+         * Opt a channel back in
+         * @description Logs the channel again and shows its logs, including those from before the opt-out.
+         */
+        delete: operations["optInChannel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/opt-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Opt a user out
+         * @description Stops logging the user and deletes their messages and logins in every channel.
+         */
+        put: operations["optOutUser"];
+        post?: never;
+        /**
+         * Opt a user back in
+         * @description Logs the user again from now on; messages deleted by the opt-out stay deleted.
+         */
+        delete: operations["optInUser"];
         options?: never;
         head?: never;
         patch?: never;
@@ -685,7 +733,10 @@ export interface components {
             q: string;
         };
         OptOutCode: {
-            /** @description Write `!rustlog optout <code>` in a logged chat to opt out. */
+            /**
+             * @description Write `!rustlog optout <code>` in a logged chat to opt out, or one of
+             *      `optin`, `optout-channel` and `optin-channel`.
+             */
             code: string;
             /** Format: date-time */
             expiresAt: string;
@@ -1809,6 +1860,318 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OptOutCode"];
+                };
+            };
+        };
+    };
+    optOutChannel: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The configured admin API key. */
+                "X-Api-Key": string;
+            };
+            path: {
+                /** @description Id of the channel. */
+                channelId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description no content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+        };
+    };
+    optInChannel: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The configured admin API key. */
+                "X-Api-Key": string;
+            };
+            path: {
+                /** @description Id of the channel. */
+                channelId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description no content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+        };
+    };
+    optOutUser: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The configured admin API key. */
+                "X-Api-Key": string;
+            };
+            path: {
+                /** @description Id of the user. */
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description no content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+        };
+    };
+    optInUser: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The configured admin API key. */
+                "X-Api-Key": string;
+            };
+            path: {
+                /** @description Id of the user. */
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description no content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Problem response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
                 };
             };
         };
