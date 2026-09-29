@@ -5,7 +5,6 @@
 //! default in `cache/sullygnome`, as a fallback for when SullyGnome is
 //! unreachable.
 
-use crate::{error::Error, Result};
 use reqwest::{
     header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT},
     Client as HttpClient,
@@ -13,6 +12,25 @@ use reqwest::{
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, time::Duration};
 use tracing::{error, warn};
+
+/// Failure of a SullyGnome request.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("HTTP request failed: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("unexpected HTTP status {0}")]
+    Status(reqwest::StatusCode),
+    #[error("could not parse the response: {0}")]
+    Parse(#[from] serde_json::Error),
+    #[error("unrecognized response format")]
+    UnknownFormat,
+    #[error("SullyGnome does not know the channel")]
+    UnknownChannel,
+    #[error("not a Twitch login or id")]
+    InvalidChannel,
+}
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// A channel's streams in one year. Also, the format of the cache files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,8 +80,7 @@ impl SullyGnome {
         let http = HttpClient::builder()
             .default_headers(headers)
             .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|_| Error::Internal)?;
+            .build()?;
 
         Ok(Self {
             http,
@@ -76,7 +93,7 @@ impl SullyGnome {
     /// count and the streams. Failures are logged.
     pub async fn fetch(&self, channel: &str, year: i32) -> Result<(u32, Vec<Stream>)> {
         if !is_valid_channel(channel) {
-            return Err(Error::NotFound);
+            return Err(Error::InvalidChannel);
         }
 
         let internal_id = self.fetch_internal_id(channel).await.inspect_err(|e| {
@@ -152,7 +169,7 @@ impl SullyGnome {
         let url = format!("{}/api/standardsearch/{login}", self.base_url);
         let resp = self.http.get(&url).send().await.map_err(|e| {
             error!("sully id http error login={} err={:?}", login, e);
-            Error::Internal
+            Error::Http(e)
         })?;
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
@@ -163,7 +180,7 @@ impl SullyGnome {
                 login,
                 body.chars().take(500).collect::<String>()
             );
-            return Err(Error::NotFound);
+            return Err(Error::Status(status));
         }
         let items: Vec<SearchItem> = serde_json::from_str(&body).map_err(|e| {
             error!(
@@ -172,13 +189,13 @@ impl SullyGnome {
                 e,
                 body.chars().take(500).collect::<String>()
             );
-            Error::Internal
+            Error::Parse(e)
         })?;
         let id = items
             .into_iter()
             .find(|it| it.itemtype == 1)
             .map(|it| it.value.into_string())
-            .ok_or(Error::NotFound)?;
+            .ok_or(Error::UnknownChannel)?;
         Ok(id)
     }
 
@@ -194,7 +211,7 @@ impl SullyGnome {
             );
             let resp_raw = self.http.get(&url).send().await.map_err(|e| {
                 error!("sully streams http error url={} err={:?}", url, e);
-                Error::Internal
+                Error::Http(e)
             })?;
             let status = resp_raw.status();
             let body = resp_raw.text().await.unwrap_or_default();
@@ -205,7 +222,7 @@ impl SullyGnome {
                     url,
                     body.chars().take(500).collect::<String>()
                 );
-                return Err(Error::NotFound);
+                return Err(Error::Status(status));
             }
             let parsed = parse_body("", year, &body).map_err(|e| {
                 error!(
@@ -214,7 +231,7 @@ impl SullyGnome {
                     e,
                     body.chars().take(500).collect::<String>()
                 );
-                Error::Internal
+                e
             })?;
             let total = parsed.total;
             let count_added = parsed.streams.len() as u32;
@@ -356,5 +373,5 @@ fn parse_body(channel: &str, year: i32, body: &str) -> Result<StreamList> {
             streams,
         });
     }
-    Err(Error::NotFound)
+    Err(Error::UnknownFormat)
 }

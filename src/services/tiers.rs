@@ -6,9 +6,11 @@ use crate::{
         logs::TimeRange,
         tiers::{filter_bots, rank, RankedTiers, TierMode, TierPeriod, UserWindows},
     },
-    storage::tiers::{user_windows, CalendarPeriod, StreamFilter},
+    storage::{
+        tiers::{user_windows, CalendarPeriod, StreamFilter},
+        Result,
+    },
     twitch::Twitch,
-    Result,
 };
 use chrono::{DateTime, Days, FixedOffset, Months, NaiveDate, NaiveTime, Utc};
 use clickhouse::Client;

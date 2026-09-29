@@ -1,10 +1,8 @@
 //! Per-user activity windows behind tier tables, counted in Moscow time.
 
 use super::ACTIVE_USER_OPT_OUT_PREDICATE;
-use crate::{
-    domain::{logs::TimeRange, tiers::UserWindows},
-    Result,
-};
+use crate::domain::{logs::TimeRange, tiers::UserWindows};
+use crate::storage::Result;
 use chrono::NaiveDate;
 use clickhouse::{Client, Row};
 use serde::Deserialize;

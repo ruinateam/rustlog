@@ -1,4 +1,5 @@
 mod admin;
+pub mod error;
 mod firehose;
 mod frontend;
 mod handlers;

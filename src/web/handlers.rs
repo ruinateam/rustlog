@@ -9,14 +9,13 @@ use super::{
         UserParam,
     },
 };
+use crate::web::error::{Error, Result};
 use crate::{
     app::App,
     domain::tiers::{RankedTiers, TierPeriod, TIMEZONE},
-    error::Error,
     services::{self, sully, tiers::TierQuery},
     storage::{availability, logs, stats, stream::LogsStream},
     web::schema::{LogRangeParams, LogsPathDate, SullyStreamsResponse, TierModeQuery},
-    Result,
 };
 use aide::axum::IntoApiResponse;
 use axum::{
@@ -281,7 +280,7 @@ async fn compute_tiers(
 
 async fn resolve_channel(app: &App, id_type: ChannelIdType, channel: &str) -> Result<String> {
     match id_type {
-        ChannelIdType::Name => app.twitch.get_user_id_by_name(channel).await,
+        ChannelIdType::Name => Ok(app.twitch.get_user_id_by_name(channel).await?),
         ChannelIdType::Id => Ok(channel.to_owned()),
     }
 }

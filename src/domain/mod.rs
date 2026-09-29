@@ -4,5 +4,6 @@
 //! type never silently changes an API response.
 
 pub mod logs;
+pub mod opt_out;
 pub mod stats;
 pub mod tiers;

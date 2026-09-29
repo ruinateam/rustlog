@@ -1,7 +1,8 @@
 //! The days and months for which logs exist.
 
 use super::ACTIVE_USER_OPT_OUT_PREDICATE;
-use crate::{domain::logs::LogDate, Result};
+use crate::domain::logs::LogDate;
+use crate::storage::Result;
 use clickhouse::{Client, Row};
 use serde::Deserialize;
 

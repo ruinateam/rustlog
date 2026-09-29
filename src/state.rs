@@ -1,4 +1,5 @@
-use crate::{config::Config, Result};
+use crate::config::Config;
+use crate::storage::Result;
 use clickhouse::{Client, Row};
 use dashmap::DashSet;
 use serde::Deserialize;

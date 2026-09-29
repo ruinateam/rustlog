@@ -6,8 +6,11 @@ use super::{
 use crate::{
     app::App,
     domain::logs::LogsQuery,
-    error::Error,
+    domain::opt_out::OptedOut,
+    storage,
     storage::{availability, logs},
+    twitch,
+    web::error::Error,
 };
 use aide::{
     axum::{routing::get_with, ApiRouter, IntoApiResponse},
@@ -211,6 +214,27 @@ impl ApiProblem {
     }
 }
 
+// Errors of the lower layers reach v2 through the legacy `Error`, which knows
+// how they map to HTTP.
+
+impl From<storage::Error> for ApiProblem {
+    fn from(error: storage::Error) -> Self {
+        Error::from(error).into()
+    }
+}
+
+impl From<twitch::Error> for ApiProblem {
+    fn from(error: twitch::Error) -> Self {
+        Error::from(error).into()
+    }
+}
+
+impl From<OptedOut> for ApiProblem {
+    fn from(opted_out: OptedOut) -> Self {
+        Error::from(opted_out).into()
+    }
+}
+
 impl From<Error> for ApiProblem {
     fn from(error_value: Error) -> Self {
         let (status, code, title) = match error_value {
@@ -234,7 +258,7 @@ impl From<Error> for ApiProblem {
                 "upstream_unavailable",
                 "The Twitch token is not ready",
             ),
-            Error::Helix(_) | Error::Io(_) | Error::Internal | Error::Clickhouse(_) => {
+            Error::Helix(_) | Error::Internal | Error::Database(_) => {
                 error!("v2 request failed: {error_value}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,

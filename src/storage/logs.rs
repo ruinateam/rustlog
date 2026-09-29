@@ -6,7 +6,8 @@ use super::{
     writer::FlushBuffer,
     ACTIVE_USER_OPT_OUT_PREDICATE,
 };
-use crate::{domain::logs::LogsQuery, error::Error, Result};
+use crate::domain::logs::LogsQuery;
+use crate::storage::{Error, Result};
 use chrono::{DateTime, Duration, Utc};
 use clickhouse::{query::RowCursor, Client};
 use rand::{rng, seq::IteratorRandom};

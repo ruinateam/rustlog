@@ -2,9 +2,12 @@
 //! lookups.
 
 pub mod cache;
+mod error;
+
+pub use self::error::{Error, Result};
 
 use self::cache::{BadgesCache, UsersCache};
-use crate::{error::Error, Result, ShutdownRx};
+use crate::ShutdownRx;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::RwLock, time::sleep};
 use tracing::{debug, info, warn};
@@ -109,7 +112,7 @@ impl Twitch {
             .read()
             .await
             .clone()
-            .ok_or(Error::TwitchTokenUnavailable)
+            .ok_or(Error::TokenUnavailable)
     }
 
     /// Resolves user ids and logins, returning a map from id to login. Users

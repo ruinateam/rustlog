@@ -1,6 +1,7 @@
 //! ClickHouse storage: schema migrations, the write buffer and queries.
 
 pub mod availability;
+mod error;
 pub mod logs;
 pub mod message;
 mod migrations;
@@ -9,6 +10,7 @@ pub mod stream;
 pub mod tiers;
 pub mod writer;
 
+pub use error::{Error, Result};
 pub use migrations::run as setup_db;
 
 // Deletion mutations are asynchronous, so every read excludes opt-outs until

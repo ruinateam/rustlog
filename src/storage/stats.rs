@@ -1,13 +1,11 @@
 //! Message counts and username history.
 
 use super::ACTIVE_USER_OPT_OUT_PREDICATE;
-use crate::{
-    domain::{
-        logs::TimeRange,
-        stats::{NameHistoryEntry, UserMessageCount},
-    },
-    Result,
+use crate::domain::{
+    logs::TimeRange,
+    stats::{NameHistoryEntry, UserMessageCount},
 };
+use crate::storage::Result;
 use chrono::DateTime;
 use clickhouse::{Client, Row};
 use serde::Deserialize;

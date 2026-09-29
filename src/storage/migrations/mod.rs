@@ -3,7 +3,8 @@ mod state;
 mod structured;
 mod username_history;
 
-use crate::{config::Config, Result};
+use crate::config::Config;
+use anyhow::Result;
 use clickhouse::Client;
 use state::StateMigration;
 use structured::StructuredMigration;

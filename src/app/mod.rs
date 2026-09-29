@@ -1,11 +1,10 @@
 use crate::{
     config::Config,
-    error::Error,
+    domain::opt_out::OptedOut,
     services::{sully::SullyGnome, tiers::Tiers},
     state::OperationalState,
     storage::{logs::delete_user_logs, message::StructuredMessage, writer::FlushBuffer},
     twitch::Twitch,
-    Result,
 };
 use anyhow::Context;
 use dashmap::DashSet;
@@ -40,23 +39,23 @@ impl App {
         Ok(())
     }
 
-    pub fn check_opted_out(&self, channel_id: &str, user_id: Option<&str>) -> Result<()> {
+    pub fn check_opted_out(&self, channel_id: &str, user_id: Option<&str>) -> Result<(), OptedOut> {
         if self.state.is_channel_opted_out(channel_id) {
-            return Err(Error::ChannelOptedOut);
+            return Err(OptedOut::Channel);
         }
 
         if let Some(user_id) = user_id {
             if self.state.is_user_opted_out(user_id) {
-                return Err(Error::UserOptedOut);
+                return Err(OptedOut::User);
             }
         }
 
         Ok(())
     }
 
-    pub fn check_user_opted_out(&self, user_id: &str) -> Result<()> {
+    pub fn check_user_opted_out(&self, user_id: &str) -> Result<(), OptedOut> {
         if self.state.is_user_opted_out(user_id) {
-            return Err(Error::UserOptedOut);
+            return Err(OptedOut::User);
         }
 
         Ok(())

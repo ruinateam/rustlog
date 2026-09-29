@@ -4,7 +4,6 @@ pub mod app;
 pub mod bot;
 pub mod config;
 pub mod domain;
-pub mod error;
 pub mod irc;
 pub mod maintenance;
 pub mod migrator;
@@ -15,5 +14,4 @@ pub mod storage;
 pub mod twitch;
 pub mod web;
 
-pub type Result<T> = std::result::Result<T, error::Error>;
 pub type ShutdownRx = tokio::sync::watch::Receiver<()>;

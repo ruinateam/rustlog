@@ -1,4 +1,4 @@
-use crate::{error::Error, Result};
+use anyhow::{bail, Result};
 use std::{
     collections::BTreeMap,
     fs::{self, read_dir},
@@ -52,7 +52,7 @@ impl LogsReader {
         info!("Getting logs for channel {channel_id}");
         let channel_path = self.root_path.join(channel_id);
         if !channel_path.exists() {
-            return Err(Error::NotFound);
+            bail!("No logs folder for channel {channel_id}");
         }
 
         let channel_dir = read_dir(channel_path)?;

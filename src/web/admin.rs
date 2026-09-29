@@ -1,4 +1,4 @@
-use crate::{app::App, bot::BotMessage, error::Error};
+use crate::{app::App, bot::BotMessage, web::error::Error};
 use aide::{
     openapi::{
         HeaderStyle, Parameter, ParameterData, ParameterSchemaOrContent, ReferenceOr, SchemaObject,

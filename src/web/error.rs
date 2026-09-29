@@ -1,17 +1,20 @@
+//! Errors of the legacy API, answered with a plain text body.
+
+use crate::{domain::opt_out::OptedOut, storage, twitch};
 use aide::{openapi::MediaType, OperationOutput};
-use axum::response::{IntoResponse, Response};
-use reqwest::StatusCode;
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use std::num::ParseIntError;
-use thiserror::Error;
 use tracing::error;
 use twitch_api::helix::ClientRequestError;
 
-#[derive(Error, Debug)]
+/// The messages are part of the frozen legacy API.
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Twitch API error: {0}")]
-    Helix(#[from] ClientRequestError<reqwest::Error>),
-    #[error("IO Error: {0}")]
-    Io(#[from] std::io::Error),
+    Helix(Box<ClientRequestError<reqwest::Error>>),
     #[error("Int parse error: {0}")]
     ParseInt(#[from] ParseIntError),
     #[error("Invalid param: {0}")]
@@ -21,7 +24,7 @@ pub enum Error {
     #[error("Twitch token is not ready yet")]
     TwitchTokenUnavailable,
     #[error("Database error")]
-    Clickhouse(#[from] clickhouse::error::Error),
+    Database(Box<clickhouse::error::Error>),
     #[error("The requested channel has opted out of being logged")]
     ChannelOptedOut,
     #[error("The requested user has opted out of being logged")]
@@ -30,21 +33,33 @@ pub enum Error {
     NotFound,
 }
 
-impl IntoResponse for Error {
-    fn into_response(self) -> Response {
-        let status_code = match &self {
-            Error::Helix(_) | Error::Io(_) | Error::Internal => StatusCode::INTERNAL_SERVER_ERROR,
-            Error::TwitchTokenUnavailable => StatusCode::SERVICE_UNAVAILABLE,
-            Error::Clickhouse(error) => {
-                error!("DB error: {error}");
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
-            Error::ParseInt(_) | Error::InvalidParam(_) => StatusCode::BAD_REQUEST,
-            Error::ChannelOptedOut | Error::UserOptedOut => StatusCode::FORBIDDEN,
-            Error::NotFound => StatusCode::NOT_FOUND,
-        };
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-        (status_code, self.to_string()).into_response()
+impl From<storage::Error> for Error {
+    fn from(error: storage::Error) -> Self {
+        match error {
+            storage::Error::Database(error) => Self::Database(error),
+            storage::Error::NotFound => Self::NotFound,
+        }
+    }
+}
+
+impl From<twitch::Error> for Error {
+    fn from(error: twitch::Error) -> Self {
+        match error {
+            twitch::Error::TokenUnavailable => Self::TwitchTokenUnavailable,
+            twitch::Error::Helix(error) => Self::Helix(error),
+            twitch::Error::NotFound => Self::NotFound,
+        }
+    }
+}
+
+impl From<OptedOut> for Error {
+    fn from(opted_out: OptedOut) -> Self {
+        match opted_out {
+            OptedOut::Channel => Self::ChannelOptedOut,
+            OptedOut::User => Self::UserOptedOut,
+        }
     }
 }
 
@@ -52,6 +67,30 @@ impl From<anyhow::Error> for Error {
     fn from(err: anyhow::Error) -> Self {
         error!("Error: {err}");
         Self::Internal
+    }
+}
+
+impl Error {
+    pub fn status(&self) -> StatusCode {
+        match self {
+            Error::Helix(_) | Error::Internal | Error::Database(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+            Error::TwitchTokenUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+            Error::ParseInt(_) | Error::InvalidParam(_) => StatusCode::BAD_REQUEST,
+            Error::ChannelOptedOut | Error::UserOptedOut => StatusCode::FORBIDDEN,
+            Error::NotFound => StatusCode::NOT_FOUND,
+        }
+    }
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        if let Error::Database(error) = &self {
+            error!("DB error: {error}");
+        }
+
+        (self.status(), self.to_string()).into_response()
     }
 }
 
