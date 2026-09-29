@@ -153,3 +153,25 @@ async fn search_without_text() {
             .await
     );
 }
+
+#[tokio::test]
+async fn search_without_matches() {
+    assert_snapshot!(
+        get("/api/v2/channels/11111/users/22222/logs/search?q=nothing-matches")
+            .send()
+            .await
+    );
+}
+
+#[tokio::test]
+async fn empty_range_in_every_format() {
+    let empty = "from=2020-01-01T00:00:00Z&to=2020-01-02T00:00:00Z";
+    for format in ["basic-json", "full-json", "ndjson", "text", "raw"] {
+        assert_snapshot!(
+            format!("empty_{format}"),
+            get(format!("{CHANNEL_LOGS}?{empty}&format={format}"))
+                .send()
+                .await
+        );
+    }
+}

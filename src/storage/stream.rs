@@ -39,6 +39,11 @@ impl LogsStream {
         }
     }
 
+    /// A stream of no messages.
+    pub fn empty() -> Self {
+        Self::Provided(Some(Vec::new()))
+    }
+
     pub fn new_multi_query(
         cursors: Vec<RowCursor<StructuredMessage<'static>>>,
         buffer_response: FlushBufferResponse,

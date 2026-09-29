@@ -1,0 +1,12 @@
+---
+source: tests/http/v2_logs.rs
+expression: "get(\"/api/v2/channels/11111/users/22222/logs/search?q=nothing-matches\").send().await"
+---
+GET /api/v2/channels/11111/users/22222/logs/search?q=nothing-matches
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "messages": []
+}

@@ -1,0 +1,12 @@
+---
+source: tests/http/v2_logs.rs
+expression: "get(format!(\"{CHANNEL_LOGS}?{empty}&format={format}\")).send().await"
+---
+GET /api/v2/channels/11111/logs?from=2020-01-01T00:00:00Z&to=2020-01-02T00:00:00Z&format=full-json
+status: 200 OK
+content-type: application/json
+cache-control: no-cache
+---
+{
+  "messages": []
+}

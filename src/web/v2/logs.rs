@@ -98,7 +98,8 @@ pub async fn channel_logs(
         &app.flush_buffer,
         (range.from, range.to),
     )
-    .await?;
+    .await
+    .or_else(no_messages)?;
     Ok(messages(stream, format))
 }
 
@@ -122,7 +123,8 @@ pub async fn user_logs(
         &app.flush_buffer,
         (range.from, range.to),
     )
-    .await?;
+    .await
+    .or_else(no_messages)?;
     Ok(messages(stream, format))
 }
 
@@ -154,6 +156,15 @@ pub async fn random_user_message(
     Ok(messages(LogsStream::new_provided(vec![message])?, format))
 }
 
+/// Storage reports an empty result as not found; lists of messages answer
+/// it as an empty list.
+fn no_messages(error: storage::Error) -> Result<LogsStream, storage::Error> {
+    match error {
+        storage::Error::NotFound => Ok(LogsStream::empty()),
+        error => Err(error),
+    }
+}
+
 fn nothing_to_pick(error: storage::Error) -> ApiProblem {
     match error {
         storage::Error::NotFound => ApiProblem::not_found("there are no messages to pick from"),
@@ -181,7 +192,9 @@ pub async fn search_user_logs(
     let (channel_id, user_id) = (path.channel_id.as_str(), path.user_id.as_str());
     app.check_opted_out(channel_id, Some(user_id))?;
 
-    let stream = logs::search_user_logs(&app.db, channel_id, user_id, &search.q, query).await?;
+    let stream = logs::search_user_logs(&app.db, channel_id, user_id, &search.q, query)
+        .await
+        .or_else(no_messages)?;
     Ok(messages(stream, format))
 }
 
