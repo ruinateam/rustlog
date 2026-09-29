@@ -1,0 +1,28 @@
+[package]
+name = "rustlog-app"
+description = "Configuration, logging and the application services shared by the HTTP API and the bot."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+clickhouse.workspace = true
+dashmap.workspace = true
+reqwest.workspace = true
+rustlog-domain.workspace = true
+rustlog-storage.workspace = true
+rustlog-twitch.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-panic.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,33 @@
+[package]
+name = "rustlog-storage"
+description = "ClickHouse storage: schema, messages and their IRC form, operational state, writer and queries."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bitflags.workspace = true
+chrono.workspace = true
+clickhouse.workspace = true
+dashmap.workspace = true
+futures.workspace = true
+prometheus.workspace = true
+rand.workspace = true
+rustlog-domain.workspace = true
+serde.workspace = true
+serde_repr.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+tmi.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+twitch-irc.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "rustlog-twitch"
+description = "Twitch Helix API access with the app token and cached lookups."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+dashmap.workspace = true
+reqwest.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+twitch_api.workspace = true
+
+[lints]
+workspace = true

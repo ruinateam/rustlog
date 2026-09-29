@@ -2258,46 +2258,152 @@ dependencies = [
 name = "rustlog"
 version = "0.1.0"
 dependencies = [
- "aide",
+ "anyhow",
+ "chrono",
+ "clap",
+ "clickhouse",
+ "futures",
+ "mimalloc",
+ "prometheus",
+ "rustlog-app",
+ "rustlog-storage",
+ "rustlog-tools",
+ "rustlog-twitch",
+ "rustlog-web",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "twitch-irc",
+]
+
+[[package]]
+name = "rustlog-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clickhouse",
+ "dashmap",
+ "reqwest",
+ "rustlog-domain",
+ "rustlog-storage",
+ "rustlog-twitch",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-panic",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "rustlog-domain"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "rustlog-storage"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitflags",
+ "chrono",
+ "clickhouse",
+ "dashmap",
+ "futures",
+ "pretty_assertions",
+ "prometheus",
+ "rand 0.10.3",
+ "rustlog-domain",
+ "serde",
+ "serde_repr",
+ "strum",
+ "thiserror 2.0.21",
+ "tmi",
+ "tokio",
+ "tracing",
+ "twitch-irc",
+ "uuid",
+]
+
+[[package]]
+name = "rustlog-tools"
+version = "0.1.0"
+dependencies = [
  "anyhow",
  "axum",
- "axum-extra",
- "axum-prometheus",
- "bitflags",
  "chrono",
  "clap",
  "clickhouse",
  "dashmap",
  "flate2",
  "futures",
+ "insta",
+ "rand 0.10.3",
+ "reqwest",
+ "rustlog-storage",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tmi",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "rustlog-twitch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dashmap",
+ "reqwest",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "twitch_api",
+]
+
+[[package]]
+name = "rustlog-web"
+version = "0.1.0"
+dependencies = [
+ "aide",
+ "anyhow",
+ "axum",
+ "axum-extra",
+ "axum-prometheus",
+ "chrono",
+ "clickhouse",
+ "futures",
  "indexmap",
  "insta",
  "metrics-prometheus",
- "mimalloc",
  "mime_guess",
  "pretty_assertions",
  "prometheus",
  "rand 0.10.3",
  "rayon",
- "reqwest",
  "rust-embed",
+ "rustlog-app",
+ "rustlog-domain",
+ "rustlog-storage",
+ "rustlog-twitch",
  "schemars",
  "serde",
  "serde_json",
- "serde_repr",
  "strum",
  "tempfile",
  "thiserror 2.0.21",
- "tmi",
  "tokio",
  "tower 0.5.3",
  "tower-http 0.7.1",
  "tracing",
- "tracing-appender",
- "tracing-panic",
- "tracing-subscriber",
- "twitch-irc",
- "twitch_api",
  "uuid",
 ]
 
