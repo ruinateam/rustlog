@@ -209,6 +209,16 @@
         "summary": "List logged channels",
         "description": "Return the channel logins and Twitch ids currently configured for live logging.",
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelsList"
+                }
+              }
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -242,6 +252,16 @@
         "summary": "List available log buckets",
         "description": "Show which years, months, or days exist. Without query parameters, returns buckets for all configured channels. With `channel` or `channelid`, returns buckets for that channel, optionally narrowed to a specific user.",
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailableLogs"
+                }
+              }
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -275,6 +295,16 @@
         "summary": "Get Twitch chat badge metadata",
         "description": "Return global and channel-specific Twitch badge images for rendering stored chat messages. Only available for logged channels.",
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBadgesResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -883,6 +913,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TierDayResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -1016,6 +1056,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TierResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -1123,6 +1173,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TierYearResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -1156,6 +1216,16 @@
         "summary": "Fetch SullyGnome stream windows",
         "description": "Return stream start and end windows from SullyGnome for one channel and year.",
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SullyStreamsResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -1301,6 +1371,17 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Logs response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonLogsResponse"
+                }
+              },
+              "text/plain; charset=utf-8": {}
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -1470,6 +1551,17 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Logs response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonLogsResponse"
+                }
+              },
+              "text/plain; charset=utf-8": {}
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -1643,6 +1735,20 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Logs response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonLogsResponse"
+                }
+              },
+              "text/plain; charset=utf-8": {}
+            }
+          },
+          "303": {
+            "description": "Without `from` and `to`: a redirect to the logs of the latest date with logs, keeping the query."
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -1840,6 +1946,20 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Logs response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonLogsResponse"
+                }
+              },
+              "text/plain; charset=utf-8": {}
+            }
+          },
+          "303": {
+            "description": "Without `from` and `to`: a redirect to the logs of the latest date with logs, keeping the query."
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -2031,6 +2151,17 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Logs response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonLogsResponse"
+                }
+              },
+              "text/plain; charset=utf-8": {}
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -2236,6 +2367,17 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Logs response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonLogsResponse"
+                }
+              },
+              "text/plain; charset=utf-8": {}
+            }
+          },
           "400": {
             "description": "The request is invalid",
             "content": {
@@ -2334,6 +2476,35 @@
           "json-basic"
         ]
       },
+      "ChannelsList": {
+        "type": "object",
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Channel"
+            }
+          }
+        },
+        "required": [
+          "channels"
+        ]
+      },
+      "Channel": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "userID": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "userID"
+        ]
+      },
       "AvailableLogsParams": {
         "type": "object",
         "allOf": [
@@ -2389,6 +2560,86 @@
               }
             ]
           }
+        ]
+      },
+      "AvailableLogs": {
+        "type": "object",
+        "properties": {
+          "availableLogs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AvailableLogDate"
+            }
+          }
+        },
+        "required": [
+          "availableLogs"
+        ]
+      },
+      "AvailableLogDate": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          },
+          "day": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "year",
+          "month"
+        ]
+      },
+      "ChatBadgesResponse": {
+        "type": "object",
+        "properties": {
+          "badges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatBadge"
+            }
+          }
+        },
+        "required": [
+          "badges"
+        ]
+      },
+      "ChatBadge": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "setId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "imageUrl1x": {
+            "type": "string"
+          },
+          "imageUrl2x": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "setId",
+          "version",
+          "imageUrl1x",
+          "imageUrl2x",
+          "title",
+          "description"
         ]
       },
       "UserNameHistoryParam": {
@@ -2746,6 +2997,194 @@
           "offline"
         ]
       },
+      "TierDayResponse": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "month": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "day": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "totalUsers": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "totalMessages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "totalUniqueMessages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TierEntry"
+            }
+          }
+        },
+        "required": [
+          "year",
+          "month",
+          "day",
+          "timezone",
+          "totalUsers",
+          "totalMessages",
+          "totalUniqueMessages",
+          "entries"
+        ]
+      },
+      "TierEntry": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "userLogin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "uniqueMessages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "windows1m": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "windows5m": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "windows15m": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "windows30m": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "windows60m": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "rank1m": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "tier1m": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rank5m": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "tier5m": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rank15m": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "tier15m": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rank30m": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "tier30m": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rank60m": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "tier60m": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tierScore": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "userId",
+          "messages",
+          "uniqueMessages",
+          "windows1m",
+          "windows5m",
+          "windows15m",
+          "windows30m",
+          "windows60m",
+          "tierScore"
+        ]
+      },
       "ChannelMonthPath": {
         "type": "object",
         "properties": {
@@ -2769,6 +3208,53 @@
           "month"
         ]
       },
+      "TierResponse": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "month": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "totalUsers": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "totalMessages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "totalUniqueMessages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TierEntry"
+            }
+          }
+        },
+        "required": [
+          "year",
+          "month",
+          "timezone",
+          "totalUsers",
+          "totalMessages",
+          "totalUniqueMessages",
+          "entries"
+        ]
+      },
       "ChannelYearPath": {
         "type": "object",
         "properties": {
@@ -2786,6 +3272,119 @@
           "channel_id_type",
           "channel",
           "year"
+        ]
+      },
+      "TierYearResponse": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "totalUsers": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "totalMessages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "totalUniqueMessages": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TierEntry"
+            }
+          }
+        },
+        "required": [
+          "year",
+          "timezone",
+          "totalUsers",
+          "totalMessages",
+          "totalUniqueMessages",
+          "entries"
+        ]
+      },
+      "SullyStreamsResponse": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "streams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SullyStreamEntry"
+            }
+          }
+        },
+        "required": [
+          "channel",
+          "year",
+          "total",
+          "streams"
+        ]
+      },
+      "SullyStreamEntry": {
+        "type": "object",
+        "properties": {
+          "streamId": {
+            "type": "string"
+          },
+          "startIso": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startHuman": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endHuman": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lengthMinutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "gamesplayed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "streamId"
         ]
       },
       "ChannelLogsByDatePath": {

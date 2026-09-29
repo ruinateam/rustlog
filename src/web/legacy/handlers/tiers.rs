@@ -6,7 +6,7 @@ use crate::{
     domain::tiers::{RankedTiers, TIMEZONE, TierPeriod},
     services::{self, sully, tiers::TierQuery},
     web::{
-        cache_control::{no_cache, public_cache},
+        cache_control::Cached,
         legacy::{
             dto::{
                 ChannelDayPath, ChannelMonthPath, ChannelYearPath, SullyStreamsResponse,
@@ -16,7 +16,6 @@ use crate::{
         },
     },
 };
-use aide::axum::IntoApiResponse;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -27,7 +26,7 @@ pub async fn get_channel_tiers_month(
     app: State<App>,
     Path(month_path): Path<ChannelMonthPath>,
     Query(mode_query): Query<TierModeQuery>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Cached<Json<TierResponse>>> {
     let channel = &month_path.channel_info.channel;
     let channel_id =
         resolve_channel(&app, month_path.channel_info.channel_id_type, channel).await?;
@@ -47,14 +46,14 @@ pub async fn get_channel_tiers_month(
         total_unique_messages: tiers.total_unique_messages,
         entries: tiers.entries.into_iter().map(TierEntry::from).collect(),
     };
-    Ok((no_cache(), Json(response)))
+    Ok(Cached::no_cache(Json(response)))
 }
 
 pub async fn get_channel_tiers_day(
     app: State<App>,
     Path(day_path): Path<ChannelDayPath>,
     Query(mode_query): Query<TierModeQuery>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Cached<Json<TierDayResponse>>> {
     let channel = &day_path.channel_info.channel;
     let channel_id = resolve_channel(&app, day_path.channel_info.channel_id_type, channel).await?;
     app.check_opted_out(&channel_id, None)?;
@@ -81,14 +80,14 @@ pub async fn get_channel_tiers_day(
         total_unique_messages: tiers.total_unique_messages,
         entries: tiers.entries.into_iter().map(TierEntry::from).collect(),
     };
-    Ok((no_cache(), Json(response)))
+    Ok(Cached::no_cache(Json(response)))
 }
 
 pub async fn get_channel_tiers_year(
     app: State<App>,
     Path(year_path): Path<ChannelYearPath>,
     Query(mode_query): Query<TierModeQuery>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Cached<Json<TierYearResponse>>> {
     let channel = &year_path.channel_info.channel;
     let channel_id = resolve_channel(&app, year_path.channel_info.channel_id_type, channel).await?;
     app.check_opted_out(&channel_id, None)?;
@@ -105,7 +104,7 @@ pub async fn get_channel_tiers_year(
         total_unique_messages: tiers.total_unique_messages,
         entries: tiers.entries.into_iter().map(TierEntry::from).collect(),
     };
-    Ok((no_cache(), Json(response)))
+    Ok(Cached::no_cache(Json(response)))
 }
 
 /// Computes a tier table and snapshots it to Supabase when enabled.
@@ -134,7 +133,7 @@ async fn compute_tiers(
 pub async fn get_sully_streams(
     app: State<App>,
     Path((channel, year)): Path<(String, i32)>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Cached<Json<SullyStreamsResponse>>> {
     // Prefer a live fetch (failures are logged), fall back to the cache.
     if let Ok((total, streams)) = app.sully.fetch(&channel, year).await {
         let list = sully::StreamList {
@@ -144,7 +143,7 @@ pub async fn get_sully_streams(
             streams,
         };
         app.sully.write_cache(&list);
-        return Ok((public_cache(600), Json(SullyStreamsResponse::from(list))));
+        return Ok(Cached::public(600, Json(SullyStreamsResponse::from(list))));
     }
 
     if let Some(cached) = app
@@ -152,7 +151,10 @@ pub async fn get_sully_streams(
         .read_cache(&channel, year)
         .filter(|list| !list.streams.is_empty())
     {
-        return Ok((public_cache(3600), Json(SullyStreamsResponse::from(cached))));
+        return Ok(Cached::public(
+            3600,
+            Json(SullyStreamsResponse::from(cached)),
+        ));
     }
 
     Err(Error::NotFound)

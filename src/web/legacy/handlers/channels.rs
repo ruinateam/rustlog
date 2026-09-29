@@ -3,20 +3,19 @@
 use crate::{
     app::App,
     web::{
-        cache_control::{no_cache, public_cache},
+        cache_control::Cached,
         legacy::{
             dto::{Channel, ChannelsList, ChatBadge, ChatBadgesResponse},
             error::{Error, Result},
         },
     },
 };
-use aide::axum::IntoApiResponse;
 use axum::{
     Json,
     extract::{Path, State},
 };
 
-pub async fn get_channels(app: State<App>) -> Result<impl IntoApiResponse> {
+pub async fn get_channels(app: State<App>) -> Result<Cached<Json<ChannelsList>>> {
     let channel_ids = app.state.channel_ids();
 
     let channels = app
@@ -30,13 +29,13 @@ pub async fn get_channels(app: State<App>) -> Result<impl IntoApiResponse> {
             .map(|(user_id, name)| Channel { name, user_id })
             .collect(),
     });
-    Ok((no_cache(), json))
+    Ok(Cached::no_cache(json))
 }
 
 pub async fn get_chat_badges(
     Path(channel_id): Path<String>,
     app: State<App>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Cached<Json<ChatBadgesResponse>>> {
     // Only logged channels, so that arbitrary ids cannot drive Helix requests.
     if !app.state.is_channel_enabled(&channel_id) {
         return Err(Error::NotFound);
@@ -59,5 +58,5 @@ pub async fn get_chat_badges(
         })
         .collect();
 
-    Ok((public_cache(3600), Json(ChatBadgesResponse { badges })))
+    Ok(Cached::public(3600, Json(ChatBadgesResponse { badges })))
 }

@@ -6,7 +6,7 @@ use crate::{
     app::App,
     storage::{availability, logs, stream::LogsStream},
     web::{
-        cache_control::no_cache,
+        cache_control::Cached,
         legacy::{
             dto::{
                 AvailableLogDate, AvailableLogs, AvailableLogsParams, ChannelLogsByDatePath,
@@ -18,10 +18,11 @@ use crate::{
         logs_response::LogsResponse,
     },
 };
-use aide::axum::IntoApiResponse;
+use aide::{OperationOutput, generate::GenContext, openapi::Operation};
 use axum::{
     Json,
     extract::{Path, Query, RawQuery, State},
+    http::StatusCode,
     response::{IntoResponse, Redirect, Response},
 };
 use chrono::{DateTime, Days, Months, NaiveDate, NaiveTime, Utc};
@@ -35,12 +36,12 @@ pub async fn get_channel_logs(
     Query(logs_params): Query<LogsParams>,
     RawQuery(query): RawQuery,
     app: State<App>,
-) -> Result<Response> {
+) -> Result<LogsOrLatest> {
     let channel_id = resolve_channel(&app, channel_id_type, &channel).await?;
 
     if let Some(range) = range_params.range() {
         let logs = get_channel_logs_inner(&app, &channel_id, logs_params, range).await?;
-        Ok(logs.into_response())
+        Ok(LogsOrLatest::Logs(logs))
     } else {
         let available_logs =
             availability::read_available_channel_logs(&app.db, &channel_id).await?;
@@ -52,7 +53,7 @@ pub async fn get_channel_logs(
             new_uri.push_str(&query);
         }
 
-        Ok(Redirect::to(&new_uri).into_response())
+        Ok(LogsOrLatest::Latest(Redirect::to(&new_uri)))
     }
 }
 
@@ -60,7 +61,7 @@ pub async fn get_channel_logs_by_date(
     app: State<App>,
     Path(channel_log_params): Path<ChannelLogsByDatePath>,
     Query(logs_params): Query<LogsParams>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Cached<LogsResponse>> {
     let channel_id = resolve_channel(
         &app,
         channel_log_params.channel_info.channel_id_type,
@@ -86,7 +87,7 @@ async fn get_channel_logs_inner(
     channel_id: &str,
     params: LogsParams,
     range: (DateTime<Utc>, DateTime<Utc>),
-) -> Result<impl IntoApiResponse + use<>> {
+) -> Result<Cached<LogsResponse>> {
     app.check_opted_out(channel_id, None)?;
 
     let stream = logs::read_channel(
@@ -104,9 +105,7 @@ async fn get_channel_logs_inner(
     };
 
     // Historical log rows can be withdrawn by an opt-out mutation.
-    let cache = no_cache();
-
-    Ok((cache, logs))
+    Ok(Cached::no_cache(logs))
 }
 
 pub async fn get_user_logs(
@@ -115,14 +114,14 @@ pub async fn get_user_logs(
     Query(logs_params): Query<LogsParams>,
     RawQuery(query): RawQuery,
     app: State<App>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<LogsOrLatest> {
     let (channel_id, user_id) = resolve_user_params(&user_params, &app).await?;
 
     app.check_opted_out(&channel_id, Some(&user_id))?;
 
     if let Some(range) = range_params.range() {
         let logs = get_user_logs_inner(&app, &channel_id, &user_id, logs_params, range).await?;
-        Ok(logs.into_response())
+        Ok(LogsOrLatest::Logs(logs))
     } else {
         let available_logs =
             availability::read_available_user_logs(&app.db, &channel_id, &user_id).await?;
@@ -141,7 +140,7 @@ pub async fn get_user_logs(
             new_uri.push('?');
             new_uri.push_str(&query);
         }
-        Ok(Redirect::to(&new_uri).into_response())
+        Ok(LogsOrLatest::Latest(Redirect::to(&new_uri)))
     }
 }
 
@@ -150,7 +149,7 @@ pub async fn get_user_logs_by_date(
     Path(user_params): Path<UserLogPathParams>,
     Path(user_logs_date): Path<UserLogsDatePath>,
     Query(logs_params): Query<LogsParams>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Cached<LogsResponse>> {
     let (channel_id, user_id) = resolve_user_params(&user_params, &app).await?;
 
     app.check_opted_out(&channel_id, Some(&user_id))?;
@@ -175,7 +174,7 @@ async fn get_user_logs_inner(
     user_id: &str,
     logs_params: LogsParams,
     range: (DateTime<Utc>, DateTime<Utc>),
-) -> Result<impl IntoApiResponse + use<>> {
+) -> Result<Cached<LogsResponse>> {
     let stream = logs::read_user(
         &app.db,
         channel_id,
@@ -192,15 +191,13 @@ async fn get_user_logs_inner(
     };
 
     // Historical log rows can be withdrawn by an opt-out mutation.
-    let cache = no_cache();
-
-    Ok((cache, logs))
+    Ok(Cached::no_cache(logs))
 }
 
 pub async fn list_available_logs(
     Query(AvailableLogsParams { user, channel }): Query<AvailableLogsParams>,
     app: State<App>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Cached<Json<AvailableLogs>>> {
     let channel = channel.ok_or_else(|| {
         Error::InvalidParam("Specify query parameter: channel or channelid".to_owned())
     })?;
@@ -226,7 +223,7 @@ pub async fn list_available_logs(
             .into_iter()
             .map(AvailableLogDate::from)
             .collect();
-        Ok((no_cache(), Json(AvailableLogs { available_logs })))
+        Ok(Cached::no_cache(Json(AvailableLogs { available_logs })))
     } else {
         Err(Error::NotFound)
     }
@@ -239,7 +236,7 @@ pub async fn random_channel_line(
         channel,
     }): Path<LogsPathChannel>,
     Query(logs_params): Query<LogsParams>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Cached<LogsResponse>> {
     let channel_id = resolve_channel(&app, channel_id_type, &channel).await?;
     app.check_opted_out(&channel_id, None)?;
 
@@ -250,14 +247,14 @@ pub async fn random_channel_line(
         stream,
         response_type: logs_params.response_type(),
     };
-    Ok((no_cache(), logs))
+    Ok(Cached::no_cache(logs))
 }
 
 pub async fn random_user_line(
     app: State<App>,
     Path(user_params): Path<UserLogPathParams>,
     Query(logs_params): Query<LogsParams>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Cached<LogsResponse>> {
     let (channel_id, user_id) = resolve_user_params(&user_params, &app).await?;
 
     app.check_opted_out(&channel_id, Some(&user_id))?;
@@ -269,7 +266,7 @@ pub async fn random_user_line(
         stream,
         response_type: logs_params.response_type(),
     };
-    Ok((no_cache(), logs))
+    Ok(Cached::no_cache(logs))
 }
 
 pub async fn search_user_logs(
@@ -277,7 +274,7 @@ pub async fn search_user_logs(
     Path(user_params): Path<UserLogPathParams>,
     Query(search_params): Query<SearchParams>,
     Query(logs_params): Query<LogsParams>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<LogsResponse> {
     let (channel_id, user_id) = resolve_user_params(&user_params, &app).await?;
 
     app.check_opted_out(&channel_id, Some(&user_id))?;
@@ -296,4 +293,41 @@ pub async fn search_user_logs(
         response_type: logs_params.response_type(),
     };
     Ok(logs)
+}
+
+/// Logs of the requested range, or without a range a redirect to the latest
+/// date with logs.
+pub enum LogsOrLatest {
+    Logs(Cached<LogsResponse>),
+    Latest(Redirect),
+}
+
+impl IntoResponse for LogsOrLatest {
+    fn into_response(self) -> Response {
+        match self {
+            Self::Logs(logs) => logs.into_response(),
+            Self::Latest(redirect) => redirect.into_response(),
+        }
+    }
+}
+
+impl OperationOutput for LogsOrLatest {
+    type Inner = Self;
+
+    fn inferred_responses(
+        ctx: &mut GenContext,
+        operation: &mut Operation,
+    ) -> Vec<(Option<u16>, aide::openapi::Response)> {
+        let mut responses = LogsResponse::inferred_responses(ctx, operation);
+        responses.push((
+            Some(StatusCode::SEE_OTHER.as_u16()),
+            aide::openapi::Response {
+                description: "Without `from` and `to`: a redirect to the logs of the latest \
+                              date with logs, keeping the query."
+                    .to_owned(),
+                ..Default::default()
+            },
+        ));
+        responses
+    }
 }

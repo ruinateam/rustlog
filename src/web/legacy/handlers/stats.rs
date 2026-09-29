@@ -12,7 +12,6 @@ use crate::{
         error::Result,
     },
 };
-use aide::axum::IntoApiResponse;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -80,7 +79,7 @@ pub async fn get_user_stats(
 pub async fn get_user_name_history(
     app: State<App>,
     Path(UserNameHistoryParam { user_id }): Path<UserNameHistoryParam>,
-) -> Result<impl IntoApiResponse> {
+) -> Result<Json<Vec<PreviousName>>> {
     app.check_user_opted_out(&user_id)?;
 
     let names: Vec<_> = stats::get_user_name_history(&app.db, &user_id)
