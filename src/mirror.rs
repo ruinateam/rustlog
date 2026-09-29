@@ -1,6 +1,6 @@
 use crate::{
     state::OperationalState,
-    storage::schema::{MessageFlags, MessageType, StructuredMessage, MESSAGES_STRUCTURED_TABLE},
+    storage::message::{MessageFlags, MessageType, StructuredMessage, MESSAGES_STRUCTURED_TABLE},
 };
 use anyhow::Context;
 use chrono::{DateTime, Utc};

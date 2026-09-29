@@ -1,5 +1,5 @@
 use super::FlushBufferResponse;
-use crate::{storage::schema::StructuredMessage, Result};
+use crate::{storage::message::StructuredMessage, Result};
 use clickhouse::query::RowCursor;
 use futures::{Future, Stream};
 use std::{

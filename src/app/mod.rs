@@ -35,7 +35,7 @@ pub struct App {
     pub config: Arc<Config>,
     pub state: OperationalState,
     pub flush_buffer: FlushBuffer,
-    pub firehose_tx: broadcast::Sender<crate::storage::schema::StructuredMessage<'static>>,
+    pub firehose_tx: broadcast::Sender<crate::storage::message::StructuredMessage<'static>>,
 }
 
 impl App {

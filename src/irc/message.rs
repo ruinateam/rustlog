@@ -1,129 +1,10 @@
+//! Conversion between stored messages and Twitch IRC messages.
+
+use crate::storage::message::{MessageFlags, MessageType, StructuredMessage, UnstructuredMessage};
 use anyhow::Context;
-use bitflags::bitflags;
-use clickhouse::Row;
-use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::fmt::Write;
-use std::{borrow::Cow, fmt::Debug};
-use strum::{Display, EnumString};
+use std::{borrow::Cow, fmt::Write};
 use tmi::{IrcMessageRef, Tag};
 use uuid::Uuid;
-
-pub const MESSAGES_STRUCTURED_TABLE: &str = "message_structured";
-
-mod datetime64_millis_u64 {
-    use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(timestamp: &u64, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        i64::try_from(*timestamp)
-            .map_err(serde::ser::Error::custom)?
-            .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let timestamp = i64::deserialize(deserializer)?;
-        u64::try_from(timestamp).map_err(D::Error::custom)
-    }
-}
-
-bitflags! {
-    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone, Copy)]
-    #[serde(transparent)]
-    pub struct MessageFlags: u16 {
-        const SUBSCRIBER        = 1;
-        const VIP               = 2;
-        const MOD               = 4;
-        const TURBO             = 8;
-        const FIRST_MSG         = 16;
-        const RETURNING_CHATTER = 32;
-        const EMOTE_ONLY        = 64;
-        const R9K               = 128;
-        const SUBS_ONLY         = 256;
-        const SLOW_MODE         = 512;
-    }
-}
-
-impl MessageFlags {
-    pub fn from_tag(tag: &Tag) -> Option<Self> {
-        let value = match tag {
-            Tag::Subscriber => Self::SUBSCRIBER,
-            Tag::Vip => Self::VIP,
-            Tag::Mod => Self::MOD,
-            Tag::Turbo => Self::TURBO,
-            Tag::FirstMsg => Self::FIRST_MSG,
-            Tag::ReturningChatter => Self::RETURNING_CHATTER,
-            Tag::EmoteOnly => Self::EMOTE_ONLY,
-            Tag::R9K => Self::R9K,
-            Tag::SubsOnly => Self::SUBS_ONLY,
-            Tag::Slow => Self::SLOW_MODE,
-            _ => return None,
-        };
-        Some(value)
-    }
-
-    pub fn as_tags(&self) -> impl Iterator<Item = (Tag<'_>, &'static str)> {
-        [
-            Tag::Subscriber,
-            Tag::Vip,
-            Tag::Mod,
-            Tag::Turbo,
-            Tag::FirstMsg,
-            Tag::ReturningChatter,
-            Tag::EmoteOnly,
-            Tag::R9K,
-            Tag::SubsOnly,
-            Tag::Slow,
-        ]
-        .into_iter()
-        .filter_map(|tag| {
-            let expected_flag = Self::from_tag(&tag).unwrap();
-            if self.contains(expected_flag) {
-                Some((tag, "1"))
-            } else {
-                None
-            }
-        })
-    }
-}
-
-#[derive(Row, Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct StructuredMessage<'a> {
-    pub channel_id: Cow<'a, str>,
-    pub channel_login: Cow<'a, str>,
-    #[serde(with = "datetime64_millis_u64")]
-    pub timestamp: u64,
-    #[serde(with = "clickhouse::serde::uuid")]
-    pub id: Uuid,
-    pub message_type: MessageType,
-    pub user_id: Cow<'a, str>,
-    pub user_login: Cow<'a, str>,
-    pub display_name: Cow<'a, str>,
-    pub color: Option<u32>,
-    pub user_type: Cow<'a, str>,
-    pub badges: Vec<Cow<'a, str>>,
-    pub badge_info: Cow<'a, str>,
-    pub client_nonce: Cow<'a, str>,
-    pub emotes: Cow<'a, str>,
-    pub automod_flags: Cow<'a, str>,
-    pub text: Cow<'a, str>,
-    pub message_flags: MessageFlags,
-    pub extra_tags: Vec<(Cow<'a, str>, Cow<'a, str>)>,
-}
-
-#[derive(Row, Serialize, Deserialize, Debug)]
-pub struct UnstructuredMessage<'a> {
-    pub channel_id: &'a str,
-    pub user_id: &'a str,
-    #[serde(with = "datetime64_millis_u64")]
-    pub timestamp: u64,
-    pub raw: &'a str,
-}
 
 impl<'a> StructuredMessage<'a> {
     pub fn from_unstructured(message: &'a UnstructuredMessage<'a>) -> anyhow::Result<Self> {
@@ -248,6 +129,8 @@ impl<'a> StructuredMessage<'a> {
         })
     }
 
+    /// The text as a person reads it: `/me` actions without their markers,
+    /// and bans, timeouts and notices spelled out.
     pub fn user_friendly_text(&self) -> Cow<'_, str> {
         match self.message_type {
             MessageType::PrivMsg => Cow::Borrowed(extract_message_text(&self.text)),
@@ -294,22 +177,6 @@ impl<'a> StructuredMessage<'a> {
                 }
             }
             _ => Cow::default(),
-        }
-    }
-
-    pub fn id(&self) -> Option<String> {
-        if self.id.is_nil() {
-            None
-        } else {
-            Some(self.id.to_string())
-        }
-    }
-
-    pub fn display_name(&self) -> &str {
-        if !self.display_name.is_empty() {
-            &self.display_name
-        } else {
-            &self.user_login
         }
     }
 
@@ -473,81 +340,49 @@ impl<'a> StructuredMessage<'a> {
 
         out
     }
-
-    pub fn into_owned(self) -> StructuredMessage<'static> {
-        StructuredMessage {
-            channel_id: Cow::Owned(self.channel_id.into_owned()),
-            channel_login: Cow::Owned(self.channel_login.into_owned()),
-            timestamp: self.timestamp,
-            id: self.id,
-            message_type: self.message_type,
-            user_id: Cow::Owned(self.user_id.into_owned()),
-            user_login: Cow::Owned(self.user_login.into_owned()),
-            display_name: Cow::Owned(self.display_name.into_owned()),
-            color: self.color,
-            user_type: Cow::Owned(self.user_type.into_owned()),
-            badges: self
-                .badges
-                .into_iter()
-                .map(|value| Cow::Owned(value.into_owned()))
-                .collect(),
-            badge_info: Cow::Owned(self.badge_info.into_owned()),
-            client_nonce: Cow::Owned(self.client_nonce.into_owned()),
-            emotes: Cow::Owned(self.emotes.into_owned()),
-            automod_flags: Cow::Owned(self.automod_flags.into_owned()),
-            text: Cow::Owned(self.text.into_owned()),
-            message_flags: self.message_flags,
-            extra_tags: self
-                .extra_tags
-                .into_iter()
-                .map(|(k, v)| (Cow::Owned(k.into_owned()), Cow::Owned(v.into_owned())))
-                .collect(),
-        }
-    }
 }
 
-fn escape_tag(value: &str) -> Cow<'_, str> {
-    fn escape(value: &str) -> String {
-        let mut out = String::with_capacity(value.len());
-        for char in value.chars() {
-            match char {
-                ';' => out.push_str("\\:"),
-                ' ' => out.push_str("\\s"),
-                '\\' => out.push_str("\\\\"),
-                '\r' => out.push_str("\\r"),
-                '\n' => out.push_str("\\n"),
-                _ => out.push(char),
+impl MessageFlags {
+    pub fn from_tag(tag: &Tag) -> Option<Self> {
+        let value = match tag {
+            Tag::Subscriber => Self::SUBSCRIBER,
+            Tag::Vip => Self::VIP,
+            Tag::Mod => Self::MOD,
+            Tag::Turbo => Self::TURBO,
+            Tag::FirstMsg => Self::FIRST_MSG,
+            Tag::ReturningChatter => Self::RETURNING_CHATTER,
+            Tag::EmoteOnly => Self::EMOTE_ONLY,
+            Tag::R9K => Self::R9K,
+            Tag::SubsOnly => Self::SUBS_ONLY,
+            Tag::Slow => Self::SLOW_MODE,
+            _ => return None,
+        };
+        Some(value)
+    }
+
+    pub fn as_tags(&self) -> impl Iterator<Item = (Tag<'_>, &'static str)> {
+        [
+            Tag::Subscriber,
+            Tag::Vip,
+            Tag::Mod,
+            Tag::Turbo,
+            Tag::FirstMsg,
+            Tag::ReturningChatter,
+            Tag::EmoteOnly,
+            Tag::R9K,
+            Tag::SubsOnly,
+            Tag::Slow,
+        ]
+        .into_iter()
+        .filter_map(|tag| {
+            let expected_flag = Self::from_tag(&tag).unwrap();
+            if self.contains(expected_flag) {
+                Some((tag, "1"))
+            } else {
+                None
             }
-        }
-        out
+        })
     }
-
-    if value.contains([';', ' ', '\\', '\r', '\n']) {
-        Cow::Owned(escape(value))
-    } else {
-        Cow::Borrowed(value)
-    }
-}
-
-#[derive(Serialize_repr, Deserialize_repr, EnumString, Debug, PartialEq, Display, Clone, Copy)]
-#[repr(u8)]
-#[strum(serialize_all = "UPPERCASE")]
-pub enum MessageType {
-    Whisper = 0,
-    PrivMsg = 1,
-    ClearChat = 2,
-    RoomState = 3,
-    UserNotice = 4,
-    UserState = 5,
-    Notice = 6,
-    Join = 7,
-    Part = 8,
-    Reconnect = 9,
-    Names = 10,
-    Ping = 11,
-    Pong = 12,
-    ClearMsg = 13,
-    GlobalUserState = 14,
 }
 
 impl MessageType {
@@ -574,11 +409,34 @@ impl MessageType {
     }
 }
 
+fn escape_tag(value: &str) -> Cow<'_, str> {
+    fn escape(value: &str) -> String {
+        let mut out = String::with_capacity(value.len());
+        for char in value.chars() {
+            match char {
+                ';' => out.push_str("\\:"),
+                ' ' => out.push_str("\\s"),
+                '\\' => out.push_str("\\\\"),
+                '\r' => out.push_str("\\r"),
+                '\n' => out.push_str("\\n"),
+                _ => out.push(char),
+            }
+        }
+        out
+    }
+
+    if value.contains([';', ' ', '\\', '\r', '\n']) {
+        Cow::Owned(escape(value))
+    } else {
+        Cow::Borrowed(value)
+    }
+}
+
 fn extract_message_text(mut message_text: &str) -> &str {
     let is_action =
         message_text.starts_with("\u{0001}ACTION ") && message_text.ends_with('\u{0001}');
     if is_action {
-        // remove the prefix and suffix
+        // Remove the prefix and suffix
         message_text = &message_text[8..message_text.len() - 1]
     }
 
@@ -588,7 +446,7 @@ fn extract_message_text(mut message_text: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{MessageType, StructuredMessage, UnstructuredMessage};
-    use crate::storage::schema::MessageFlags;
+    use crate::storage::message::MessageFlags;
     use pretty_assertions::assert_eq;
     use tmi::{IrcMessageRef, Tag};
     use uuid::Uuid;

@@ -1,6 +1,6 @@
 use crate::{
     app::App,
-    storage::schema::StructuredMessage,
+    storage::message::StructuredMessage,
     web::responders::logs::message::{BasicMessage, ResponseMessage},
     ShutdownRx,
 };
@@ -192,7 +192,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{encode_message, FirehoseFormat};
-    use crate::storage::schema::{StructuredMessage, UnstructuredMessage};
+    use crate::storage::message::{StructuredMessage, UnstructuredMessage};
 
     fn sample_message() -> StructuredMessage<'static> {
         StructuredMessage::from_unstructured(&UnstructuredMessage {

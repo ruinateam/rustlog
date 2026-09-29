@@ -2,8 +2,8 @@
 
 pub mod availability;
 pub mod logs;
+pub mod message;
 mod migrations;
-pub mod schema;
 pub mod stats;
 pub mod stream;
 pub mod tiers;

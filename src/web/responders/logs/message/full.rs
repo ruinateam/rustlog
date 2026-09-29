@@ -1,5 +1,5 @@
 use super::{BasicMessage, ResponseMessage};
-use crate::storage::schema::{MessageType, StructuredMessage};
+use crate::storage::message::{MessageType, StructuredMessage};
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -32,7 +32,7 @@ impl<'a> ResponseMessage<'a> for FullMessage<'a> {
 mod tests {
     use super::{FullMessage, MessageType};
     use crate::{
-        storage::schema::{StructuredMessage, UnstructuredMessage},
+        storage::message::{StructuredMessage, UnstructuredMessage},
         web::responders::logs::message::{BasicMessage, ResponseMessage},
     };
     use chrono::{TimeZone, Utc};

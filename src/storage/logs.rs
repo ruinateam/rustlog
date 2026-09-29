@@ -1,7 +1,7 @@
 //! Reading, searching and deleting stored chat messages.
 
 use super::{
-    schema::StructuredMessage,
+    message::StructuredMessage,
     stream::{FlushBufferResponse, LogsStream},
     writer::FlushBuffer,
     ACTIVE_USER_OPT_OUT_PREDICATE,

@@ -6,7 +6,7 @@ pub use buffer_response::FlushBufferResponse;
 use cursor::CursorStream;
 use multi_query::MultiQueryStream;
 
-use crate::{error::Error, storage::schema::StructuredMessage, Result};
+use crate::{error::Error, storage::message::StructuredMessage, Result};
 use clickhouse::query::RowCursor;
 use futures::{Stream, StreamExt};
 use std::{
@@ -43,10 +43,6 @@ impl LogsStream {
         cursors: Vec<RowCursor<StructuredMessage<'static>>>,
         buffer_response: FlushBufferResponse,
     ) -> Result<Self> {
-        // if streams.is_empty() {
-        //     return Err(Error::NotFound);
-        // }
-
         Ok(Self::MultiQuery(MultiQueryStream::new(
             cursors,
             buffer_response,

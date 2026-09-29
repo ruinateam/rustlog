@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 
 use crate::{
     domain::logs::LogsQuery,
-    storage::{schema::StructuredMessage, writer::FlushBuffer},
+    storage::{message::StructuredMessage, writer::FlushBuffer},
 };
 
 #[derive(Debug)]

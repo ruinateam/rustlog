@@ -1,5 +1,5 @@
 use super::message::{BasicMessage, FullMessage, ResponseMessage};
-use crate::{storage::schema::StructuredMessage, storage::stream::LogsStream, Result};
+use crate::{storage::message::StructuredMessage, storage::stream::LogsStream, Result};
 use futures::{stream::TryChunks, Future, Stream, StreamExt, TryStreamExt};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::{
