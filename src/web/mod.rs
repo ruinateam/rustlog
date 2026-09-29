@@ -347,11 +347,10 @@ pub fn api() -> Api {
                 .make_span_with(trace_layer::make_span_with)
                 .on_response(trace_layer::on_response),
         )
-        .layer(
-            PrometheusMetricLayerBuilder::new()
-                .with_prefix("rustlog")
-                .build(),
-        )
+        // The default `axum_http_*` metric names are kept on purpose: older
+        // axum-prometheus ignored a custom prefix, so deployed dashboards use
+        // these names.
+        .layer(PrometheusMetricLayerBuilder::new().build())
         .route("/metrics", get(metrics))
         .finish_api(&mut api);
 
