@@ -1,5 +1,6 @@
 pub mod message;
 
+use crate::domain::logs::TimeRange;
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -15,5 +16,9 @@ pub struct LogRangeParams {
 impl LogRangeParams {
     pub fn range(&self) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
         self.from.zip(self.to)
+    }
+
+    pub fn time_range(&self) -> Option<TimeRange> {
+        self.range().map(|(from, to)| TimeRange { from, to })
     }
 }

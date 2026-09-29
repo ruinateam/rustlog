@@ -1,4 +1,9 @@
 use super::responders::logs::{JsonResponseType, LogsResponseType};
+use crate::domain::{
+    self,
+    logs::{LogDate, LogsQuery},
+    stats::{NameHistoryEntry, UserMessageCount},
+};
 use chrono::{DateTime, Utc};
 use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
 use serde::{
@@ -146,6 +151,14 @@ pub struct LogsParams {
 }
 
 impl LogsParams {
+    pub fn query(&self) -> LogsQuery {
+        LogsQuery {
+            reverse: self.reverse,
+            limit: self.limit,
+            offset: self.offset,
+        }
+    }
+
     pub fn response_type(&self) -> LogsResponseType {
         if self.raw {
             LogsResponseType::Raw
@@ -193,6 +206,16 @@ pub struct AvailableLogDate {
     pub month: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub day: Option<String>,
+}
+
+impl From<LogDate> for AvailableLogDate {
+    fn from(date: LogDate) -> Self {
+        Self {
+            year: date.year.to_string(),
+            month: date.month.to_string(),
+            day: date.day.map(|day| day.to_string()),
+        }
+    }
 }
 
 impl Display for AvailableLogDate {
@@ -252,6 +275,16 @@ pub struct UserLogsStats {
     pub message_count: u64,
 }
 
+impl From<UserMessageCount> for UserLogsStats {
+    fn from(count: UserMessageCount) -> Self {
+        Self {
+            user_id: count.user_id,
+            user_login: count.user_login,
+            message_count: count.message_count,
+        }
+    }
+}
+
 #[derive(Deserialize, JsonSchema)]
 pub struct UserNameHistoryParam {
     pub user_id: String,
@@ -262,6 +295,16 @@ pub struct PreviousName {
     pub user_login: String,
     pub last_timestamp: DateTime<Utc>,
     pub first_timestamp: DateTime<Utc>,
+}
+
+impl From<NameHistoryEntry> for PreviousName {
+    fn from(entry: NameHistoryEntry) -> Self {
+        Self {
+            user_login: entry.user_login,
+            last_timestamp: entry.last_seen,
+            first_timestamp: entry.first_seen,
+        }
+    }
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -297,6 +340,33 @@ pub struct TierEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tier_60m: Option<String>,
     pub tier_score: u32,
+}
+
+impl From<domain::tiers::TierEntry> for TierEntry {
+    fn from(entry: domain::tiers::TierEntry) -> Self {
+        Self {
+            user_id: entry.user_id,
+            user_login: entry.user_login,
+            messages: entry.messages,
+            unique_messages: entry.unique_messages,
+            windows_1m: entry.windows_1m,
+            windows_5m: entry.windows_5m,
+            windows_15m: entry.windows_15m,
+            windows_30m: entry.windows_30m,
+            windows_60m: entry.windows_60m,
+            rank_1m: entry.rank_1m,
+            tier_1m: entry.tier_1m,
+            rank_5m: entry.rank_5m,
+            tier_5m: entry.tier_5m,
+            rank_15m: entry.rank_15m,
+            tier_15m: entry.tier_15m,
+            rank_30m: entry.rank_30m,
+            tier_30m: entry.tier_30m,
+            rank_60m: entry.rank_60m,
+            tier_60m: entry.tier_60m,
+            tier_score: entry.tier_score,
+        }
+    }
 }
 
 #[derive(Serialize, JsonSchema)]

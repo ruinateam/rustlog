@@ -8,12 +8,12 @@ use serde::Deserialize;
 use writer::FlushBuffer;
 
 use crate::{
-    error::Error,
-    logs::{
-        schema::LogRangeParams,
-        stream::{FlushBufferResponse, LogsStream},
+    domain::{
+        logs::{LogDate, LogsQuery, TimeRange},
+        stats::{NameHistoryEntry, UserMessageCount},
     },
-    web::schema::{AvailableLogDate, LogsParams, PreviousName, UserLogsStats},
+    error::Error,
+    logs::stream::{FlushBufferResponse, LogsStream},
     Result,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -32,14 +32,14 @@ const ACTIVE_USER_OPT_OUT_PREDICATE: &str = "user_id NOT IN (SELECT subject_id F
 pub async fn read_channel(
     db: &Client,
     channel_id: &str,
-    params: LogsParams,
+    logs_query: LogsQuery,
     flush_buffer: &FlushBuffer,
     (from, to): (DateTime<Utc>, DateTime<Utc>),
 ) -> Result<LogsStream> {
     let buffer_response =
-        FlushBufferResponse::new(flush_buffer, channel_id, None, params, (from, to)).await;
+        FlushBufferResponse::new(flush_buffer, channel_id, None, logs_query, (from, to)).await;
 
-    let suffix = if params.reverse { "DESC" } else { "ASC" };
+    let suffix = if logs_query.reverse { "DESC" } else { "ASC" };
 
     let mut query = format!("SELECT ?fields FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp >= ? AND timestamp < ? ORDER BY timestamp {suffix}");
 
@@ -75,7 +75,7 @@ pub async fn read_channel(
             }
         }
 
-        if params.reverse {
+        if logs_query.reverse {
             streams.reverse();
         }
 
@@ -115,14 +115,20 @@ pub async fn read_user(
     db: &Client,
     channel_id: &str,
     user_id: &str,
-    params: LogsParams,
+    logs_query: LogsQuery,
     flush_buffer: &FlushBuffer,
     (from, to): (DateTime<Utc>, DateTime<Utc>),
 ) -> Result<LogsStream> {
-    let buffer_response =
-        FlushBufferResponse::new(flush_buffer, channel_id, Some(user_id), params, (from, to)).await;
+    let buffer_response = FlushBufferResponse::new(
+        flush_buffer,
+        channel_id,
+        Some(user_id),
+        logs_query,
+        (from, to),
+    )
+    .await;
 
-    let suffix = if params.reverse { "DESC" } else { "ASC" };
+    let suffix = if logs_query.reverse { "DESC" } else { "ASC" };
     let mut query = format!("SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND timestamp >= ? AND timestamp < ? ORDER BY timestamp {suffix}");
     apply_limit_offset(&mut query, &buffer_response);
 
@@ -152,10 +158,7 @@ struct AvailableMonth {
 // Ignore obviously broken timestamps (e.g., unix epoch -> 1970) when listing available logs.
 const MIN_VALID_TIMESTAMP: &str = "2020-01-01 00:00:00";
 
-pub async fn read_available_channel_logs(
-    db: &Client,
-    channel_id: &str,
-) -> Result<Vec<AvailableLogDate>> {
+pub async fn read_available_channel_logs(db: &Client, channel_id: &str) -> Result<Vec<LogDate>> {
     // Query year/month/day directly in UTC to avoid timezone skew when converting to chrono.
     let query = format!(
         "SELECT
@@ -178,10 +181,10 @@ pub async fn read_available_channel_logs(
 
     let dates = rows
         .into_iter()
-        .map(|row| AvailableLogDate {
-            year: row.year.to_string(),
-            month: row.month.to_string(),
-            day: Some(row.day.to_string()),
+        .map(|row| LogDate {
+            year: row.year,
+            month: row.month,
+            day: Some(row.day),
         })
         .collect();
 
@@ -192,7 +195,7 @@ pub async fn read_available_user_logs(
     db: &Client,
     channel_id: &str,
     user_id: &str,
-) -> Result<Vec<AvailableLogDate>> {
+) -> Result<Vec<LogDate>> {
     // Query year/month directly in UTC to avoid local timezone skew.
     let query = format!(
         "SELECT
@@ -215,9 +218,9 @@ pub async fn read_available_user_logs(
 
     let dates = rows
         .into_iter()
-        .map(|row| AvailableLogDate {
-            year: row.year.to_string(),
-            month: row.month.to_string(),
+        .map(|row| LogDate {
+            year: row.year,
+            month: row.month,
             day: None,
         })
         .collect();
@@ -326,11 +329,11 @@ pub async fn search_user_logs(
     channel_id: &str,
     user_id: &str,
     search: &str,
-    params: LogsParams,
+    logs_query: LogsQuery,
 ) -> Result<LogsStream> {
-    let buffer_response = FlushBufferResponse::empty(params);
+    let buffer_response = FlushBufferResponse::empty(logs_query);
 
-    let suffix = if params.reverse { "DESC" } else { "ASC" };
+    let suffix = if logs_query.reverse { "DESC" } else { "ASC" };
 
     let mut query = format!("SELECT * FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE} AND positionCaseInsensitive(text, ?) != 0 ORDER BY timestamp {suffix}");
     apply_limit_offset(&mut query, &buffer_response);
@@ -663,19 +666,19 @@ pub async fn get_month_windows_with_ranges(
 pub async fn get_channel_stats(
     db: &Client,
     channel_id: &str,
-    range_params: LogRangeParams,
+    range: Option<TimeRange>,
 ) -> Result<(u64, Vec<StatsRow>)> {
     let mut query = format!(
         "SELECT count(*) FROM message_structured WHERE channel_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE}"
     );
 
-    if range_params.range().is_some() {
+    if range.is_some() {
         query.push_str(" AND timestamp >= ? AND timestamp < ?");
     }
 
     let mut query = db.query(&query).bind(channel_id);
 
-    if let Some((from, to)) = range_params.range() {
+    if let Some(TimeRange { from, to }) = range {
         query = query
             .bind(from.timestamp_millis() as f64 / 1000.0)
             .bind(to.timestamp_millis() as f64 / 1000.0);
@@ -687,7 +690,7 @@ pub async fn get_channel_stats(
         "SELECT count(*) as cnt, user_id FROM message_structured WHERE channel_id = ? AND user_id != '' AND {ACTIVE_USER_OPT_OUT_PREDICATE}"
     );
 
-    if range_params.range().is_some() {
+    if range.is_some() {
         query.push_str(" AND timestamp >= ? AND timestamp < ?");
     }
 
@@ -695,7 +698,7 @@ pub async fn get_channel_stats(
 
     let mut query = db.query(&query).bind(channel_id);
 
-    if let Some((from, to)) = range_params.range() {
+    if let Some(TimeRange { from, to }) = range {
         query = query
             .bind(from.timestamp_millis() as f64 / 1000.0)
             .bind(to.timestamp_millis() as f64 / 1000.0);
@@ -711,19 +714,19 @@ pub async fn get_user_stats(
     channel_id: &str,
     user_id: String,
     user_login: Option<String>,
-    range_params: LogRangeParams,
-) -> Result<UserLogsStats> {
+    range: Option<TimeRange>,
+) -> Result<UserMessageCount> {
     let mut query = format!(
         "SELECT count(*) FROM message_structured WHERE channel_id = ? AND user_id = ? AND {ACTIVE_USER_OPT_OUT_PREDICATE}"
     );
 
-    if range_params.range().is_some() {
+    if range.is_some() {
         query.push_str(" AND timestamp >= ? AND timestamp < ?");
     }
 
     let mut query = db.query(&query).bind(channel_id).bind(&user_id);
 
-    if let Some((from, to)) = range_params.range() {
+    if let Some(TimeRange { from, to }) = range {
         query = query
             .bind(from.timestamp_millis() as f64 / 1000.0)
             .bind(to.timestamp_millis() as f64 / 1000.0);
@@ -731,14 +734,14 @@ pub async fn get_user_stats(
 
     let count = query.fetch_one().await?;
 
-    Ok(UserLogsStats {
+    Ok(UserMessageCount {
         message_count: count,
         user_login,
         user_id,
     })
 }
 
-pub async fn get_user_name_history(db: &Client, user_id: &str) -> Result<Vec<PreviousName>> {
+pub async fn get_user_name_history(db: &Client, user_id: &str) -> Result<Vec<NameHistoryEntry>> {
     #[derive(Deserialize, Row)]
     struct SingleNameHistory {
         user_login: String,
@@ -763,11 +766,11 @@ pub async fn get_user_name_history(db: &Client, user_id: &str) -> Result<Vec<Pre
         .into_iter()
         .filter_map(|row| {
             if seen_logins.insert(row.user_login.clone()) {
-                Some(PreviousName {
+                Some(NameHistoryEntry {
                     user_login: row.user_login,
-                    last_timestamp: DateTime::from_timestamp_millis(row.last_timestamp)
+                    last_seen: DateTime::from_timestamp_millis(row.last_timestamp)
                         .expect("Invalid DateTime"),
-                    first_timestamp: DateTime::from_timestamp_millis(row.first_timestamp)
+                    first_seen: DateTime::from_timestamp_millis(row.first_timestamp)
                         .expect("Invalid DateTime"),
                 })
             } else {

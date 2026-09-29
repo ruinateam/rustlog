@@ -1,4 +1,4 @@
-use crate::{db::WindowsAggRow, web::schema::TierEntry};
+use crate::{db::WindowsAggRow, domain::tiers::TierEntry};
 use std::collections::{HashMap, HashSet};
 
 pub const RESPONSE_LIMIT: usize = 500;

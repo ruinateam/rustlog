@@ -1,9 +1,13 @@
-use super::{handlers::no_cache_header, responders::logs::LogsResponse, schema::AvailableLogs};
+use super::{
+    handlers::no_cache_header,
+    responders::logs::{JsonResponseType, LogsResponse, LogsResponseType},
+    schema::{AvailableLogDate, AvailableLogs},
+};
 use crate::{
     app::App,
     db::{read_available_channel_logs, read_available_user_logs, read_user},
+    domain::logs::LogsQuery,
     error::Error,
-    web::{responders::logs::LogsResponseType, schema::LogsParams},
 };
 use aide::{
     axum::{routing::get_with, ApiRouter, IntoApiResponse},
@@ -106,6 +110,10 @@ async fn availability(
         read_available_channel_logs(&app.db, &channel_id).await?
     };
 
+    let available_logs = available_logs
+        .into_iter()
+        .map(AvailableLogDate::from)
+        .collect();
     Ok((no_cache_header(), Json(AvailableLogs { available_logs })))
 }
 
@@ -154,25 +162,23 @@ async fn user_logs(
 
     app.check_opted_out(&channel_id, Some(&user_id))?;
 
-    let logs_params = LogsParams {
-        json: matches!(query.format, LogFormat::FullJson),
-        json_basic: matches!(query.format, LogFormat::BasicJson),
-        raw: matches!(query.format, LogFormat::Raw),
+    let logs_query = LogsQuery {
         reverse: query.reverse,
-        ndjson: matches!(query.format, LogFormat::Ndjson),
         limit: query.limit,
         offset: query.offset,
     };
-    let response_type = if matches!(query.format, LogFormat::Text) {
-        LogsResponseType::Text
-    } else {
-        logs_params.response_type()
+    let response_type = match query.format {
+        LogFormat::BasicJson => LogsResponseType::Json(JsonResponseType::Basic),
+        LogFormat::FullJson => LogsResponseType::Json(JsonResponseType::Full),
+        LogFormat::Ndjson => LogsResponseType::NdJson,
+        LogFormat::Text => LogsResponseType::Text,
+        LogFormat::Raw => LogsResponseType::Raw,
     };
     let stream = read_user(
         &app.db,
         &channel_id,
         &user_id,
-        logs_params,
+        logs_query,
         &app.flush_buffer,
         (query.from, query.to),
     )

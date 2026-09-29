@@ -1,11 +1,12 @@
 use super::{
     responders::logs::LogsResponse,
     schema::{
-        AvailableLogs, AvailableLogsParams, Channel, ChannelDayPath, ChannelIdType,
-        ChannelLogsByDatePath, ChannelLogsStats, ChannelMonthPath, ChannelParam, ChannelYearPath,
-        ChannelsList, ChatBadge, ChatBadgesResponse, LogsParams, LogsPathChannel, SearchParams,
-        TierDayResponse, TierEntry, TierResponse, TierYearResponse, UserIdType, UserLogPathParams,
-        UserLogsDatePath, UserLogsStats, UserNameHistoryParam, UserParam,
+        AvailableLogDate, AvailableLogs, AvailableLogsParams, Channel, ChannelDayPath,
+        ChannelIdType, ChannelLogsByDatePath, ChannelLogsStats, ChannelMonthPath, ChannelParam,
+        ChannelYearPath, ChannelsList, ChatBadge, ChatBadgesResponse, LogsParams, LogsPathChannel,
+        PreviousName, SearchParams, TierDayResponse, TierEntry, TierResponse, TierYearResponse,
+        UserIdType, UserLogPathParams, UserLogsDatePath, UserLogsStats, UserNameHistoryParam,
+        UserParam,
     },
 };
 use crate::{
@@ -107,7 +108,7 @@ pub async fn get_channel_logs(
         Ok(logs.into_response())
     } else {
         let available_logs = read_available_channel_logs(&app.db, &channel_id).await?;
-        let latest_log = available_logs.first().ok_or(Error::NotFound)?;
+        let latest_log = AvailableLogDate::from(*available_logs.first().ok_or(Error::NotFound)?);
 
         let mut new_uri = format!("/{channel_id_type}/{channel}/{latest_log}");
         if let Some(query) = query {
@@ -134,7 +135,7 @@ pub async fn get_channel_stats(
     app.check_opted_out(&channel_id, None)?;
 
     let (message_count, stats_rows) =
-        db::get_channel_stats(&app.db, &channel_id, range_params).await?;
+        db::get_channel_stats(&app.db, &channel_id, range_params.time_range()).await?;
 
     let user_ids = stats_rows.iter().map(|row| row.user_id.clone()).collect();
     let mut users = app.get_users(user_ids, vec![], false).await?;
@@ -168,9 +169,16 @@ pub async fn get_user_stats(
         .await?
         .into_values()
         .next();
-    let stats = db::get_user_stats(&app.db, &channel_id, user_id, user_login, range_params).await?;
+    let stats = db::get_user_stats(
+        &app.db,
+        &channel_id,
+        user_id,
+        user_login,
+        range_params.time_range(),
+    )
+    .await?;
 
-    Ok(Json(stats))
+    Ok(Json(UserLogsStats::from(stats)))
 }
 
 fn build_http_client() -> Result<HttpClient> {
@@ -329,7 +337,7 @@ pub async fn get_channel_tiers_month(
         total_users: ranked.total_users,
         total_messages: ranked.total_messages,
         total_unique_messages: ranked.total_unique_messages,
-        entries: ranked.entries,
+        entries: ranked.entries.into_iter().map(TierEntry::from).collect(),
     };
 
     spawn_supabase_tiers(
@@ -443,7 +451,7 @@ pub async fn get_channel_tiers_day(
         total_users: ranked.total_users,
         total_messages: ranked.total_messages,
         total_unique_messages: ranked.total_unique_messages,
-        entries: ranked.entries,
+        entries: ranked.entries.into_iter().map(TierEntry::from).collect(),
     };
 
     spawn_supabase_tiers(
@@ -569,7 +577,7 @@ pub async fn get_channel_tiers_year(
         total_users: ranked.total_users,
         total_messages: ranked.total_messages,
         total_unique_messages: ranked.total_unique_messages,
-        entries: ranked.entries,
+        entries: ranked.entries.into_iter().map(TierEntry::from).collect(),
     };
 
     spawn_supabase_tiers(
@@ -665,7 +673,14 @@ async fn get_channel_logs_inner(
 ) -> Result<impl IntoApiResponse> {
     app.check_opted_out(channel_id, None)?;
 
-    let stream = read_channel(&app.db, channel_id, params, &app.flush_buffer, range).await?;
+    let stream = read_channel(
+        &app.db,
+        channel_id,
+        params.query(),
+        &app.flush_buffer,
+        range,
+    )
+    .await?;
 
     let logs = LogsResponse {
         response_type: params.response_type(),
@@ -694,7 +709,7 @@ pub async fn get_user_logs(
         Ok(logs.into_response())
     } else {
         let available_logs = read_available_user_logs(&app.db, &channel_id, &user_id).await?;
-        let latest_log = available_logs.first().ok_or(Error::NotFound)?;
+        let latest_log = AvailableLogDate::from(*available_logs.first().ok_or(Error::NotFound)?);
 
         let UserLogPathParams {
             channel_id_type,
@@ -748,7 +763,7 @@ async fn get_user_logs_inner(
         &app.db,
         channel_id,
         user_id,
-        logs_params,
+        logs_params.query(),
         &app.flush_buffer,
         range,
     )
@@ -790,6 +805,10 @@ pub async fn list_available_logs(
     };
 
     if !available_logs.is_empty() {
+        let available_logs = available_logs
+            .into_iter()
+            .map(AvailableLogDate::from)
+            .collect();
         Ok((no_cache_header(), Json(AvailableLogs { available_logs })))
     } else {
         Err(Error::NotFound)
@@ -854,7 +873,7 @@ pub async fn search_user_logs(
         &channel_id,
         &user_id,
         &search_params.q,
-        logs_params,
+        logs_params.query(),
     )
     .await?;
 
@@ -871,7 +890,11 @@ pub async fn get_user_name_history(
 ) -> Result<impl IntoApiResponse> {
     app.check_user_opted_out(&user_id)?;
 
-    let names = db::get_user_name_history(&app.db, &user_id).await?;
+    let names: Vec<_> = db::get_user_name_history(&app.db, &user_id)
+        .await?
+        .into_iter()
+        .map(PreviousName::from)
+        .collect();
 
     Ok(Json(names))
 }

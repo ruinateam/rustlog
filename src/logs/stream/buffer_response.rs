@@ -2,20 +2,20 @@ use chrono::{DateTime, Utc};
 
 use crate::{
     db::{schema::StructuredMessage, writer::FlushBuffer},
-    web::schema::LogsParams,
+    domain::logs::LogsQuery,
 };
 
 #[derive(Debug)]
 pub struct FlushBufferResponse {
     pub messages: Vec<StructuredMessage<'static>>,
-    pub params: LogsParams,
+    pub query: LogsQuery,
 }
 
 impl FlushBufferResponse {
-    pub fn empty(params: LogsParams) -> Self {
+    pub fn empty(query: LogsQuery) -> Self {
         Self {
             messages: vec![],
-            params,
+            query,
         }
     }
 
@@ -23,7 +23,7 @@ impl FlushBufferResponse {
         buffer: &FlushBuffer,
         channel_id: &str,
         user_id: Option<&str>,
-        params: LogsParams,
+        query: LogsQuery,
         (from, to): (DateTime<Utc>, DateTime<Utc>),
     ) -> Self {
         let timestamp_range = (from.timestamp_millis() as u64)..(to.timestamp_millis() as u64);
@@ -38,11 +38,11 @@ impl FlushBufferResponse {
                 .await
         };
 
-        if params.reverse {
+        if query.reverse {
             messages.reverse();
         }
 
-        if let Some(offset) = params.offset {
+        if let Some(offset) = query.offset {
             if offset as usize > messages.len() {
                 messages.clear();
             } else {
@@ -50,14 +50,14 @@ impl FlushBufferResponse {
             }
         }
 
-        Self { messages, params }
+        Self { messages, query }
     }
 
     pub fn normalized_limit(&self) -> Option<u64> {
         let count = self.messages.len() as u64;
-        let limit = self.params.limit;
+        let limit = self.query.limit;
 
-        if self.params.reverse {
+        if self.query.reverse {
             limit.map(|limit| limit.saturating_sub(count))
         } else {
             limit
@@ -66,9 +66,9 @@ impl FlushBufferResponse {
 
     pub fn normalized_offset(&self) -> Option<u64> {
         let count = self.len() as u64;
-        let offset = self.params.offset;
+        let offset = self.query.offset;
 
-        if self.params.reverse {
+        if self.query.reverse {
             offset.map(|offset| offset.saturating_sub(count))
         } else {
             offset
@@ -84,6 +84,6 @@ impl FlushBufferResponse {
     }
 
     pub fn is_at_start(&self) -> bool {
-        self.params.reverse
+        self.query.reverse
     }
 }
