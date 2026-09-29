@@ -80,7 +80,11 @@ impl<'a> StructuredMessage<'a> {
                     user_type = tmi::maybe_unescape(value);
                 }
                 Tag::Badges => {
-                    badges = value.split(',').map(Cow::Borrowed).collect();
+                    badges = value
+                        .split(',')
+                        .filter(|badge| !badge.is_empty())
+                        .map(Cow::Borrowed)
+                        .collect();
                 }
                 Tag::BadgeInfo => {
                     badge_info = tmi::maybe_unescape(value);
@@ -487,6 +491,20 @@ mod tests {
         };
 
         assert_eq!(expected_message, message);
+    }
+
+    #[test]
+    fn empty_badges_tag_means_no_badges() {
+        let raw = "@badge-info=;badges=;color=;display-name=Bob;id=00000000-0000-4000-8000-000000000012;room-id=11111;tmi-sent-ts=1772432100000;user-id=33333 :bob!bob@bob.tmi.twitch.tv PRIVMSG #testchan :good morning";
+        let unstructured = UnstructuredMessage {
+            channel_id: "11111",
+            user_id: "33333",
+            timestamp: 1772432100000,
+            raw,
+        };
+        let message = StructuredMessage::from_unstructured(&unstructured).unwrap();
+        assert!(message.badges.is_empty());
+        assert!(message.to_raw_irc().contains(";badges=;"));
     }
 
     #[test]
