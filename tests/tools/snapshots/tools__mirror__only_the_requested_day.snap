@@ -1,0 +1,5 @@
+---
+source: tests/tools/mirror.rs
+expression: test_db.messages().await
+---
+2026-03-02 06:15:00.000 00000000-0000-4000-8000-000000000006 #testchan(11111) bob(33333) "Bob" color=None badges=[]: good morning

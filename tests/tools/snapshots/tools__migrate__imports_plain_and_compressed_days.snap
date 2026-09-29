@@ -1,0 +1,7 @@
+---
+source: tests/tools/migrate.rs
+expression: test_db.messages().await
+---
+2026-03-01 07:00:00.000 00000000-0000-4000-8000-000000000011 #testchan(11111) alice(22222) "Alice" color=Some(16711680) badges=["subscriber/12"]: hello from justlog
+2026-03-01 07:05:00.000 00000000-0000-0000-0000-000000000000 #testchan(11111) () "" color=None badges=[]: 
+2026-03-02 06:15:00.000 00000000-0000-4000-8000-000000000012 #testchan(11111) bob(33333) "Bob" color=None badges=[""]: good morning

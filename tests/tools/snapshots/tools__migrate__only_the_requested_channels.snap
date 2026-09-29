@@ -1,0 +1,5 @@
+---
+source: tests/tools/migrate.rs
+expression: test_db.messages().await
+---
+

@@ -1,8 +1,8 @@
-# The HTTP integration tests (`tests/http`) need ClickHouse, so the default
-# profile leaves them out; `--profile integration` runs only them.
+# The integration tests (`tests/http`, `tests/tools`) need ClickHouse, so
+# the default profile leaves them out; `--profile integration` runs only them.
 
 [profile.default]
-default-filter = "not binary(http)"
+default-filter = "not (binary(http) | binary(tools))"
 
 [profile.integration]
-default-filter = "binary(http)"
+default-filter = "binary(http) | binary(tools)"
