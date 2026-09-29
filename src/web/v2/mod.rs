@@ -33,7 +33,7 @@ pub struct V2Api {
 pub fn api() -> V2Api {
     let mut spec = openapi();
     let router = routes()
-        .route("/docs", get(docs::scalar_page))
+        .route("/docs", get(crate::web::docs::redirect_to_page))
         .route("/openapi.json", get(docs::serve_openapi))
         // Unlike a nested service, a nested router neither matches its bare
         // prefix nor keeps its own default fallback: without these, `/api/v2`

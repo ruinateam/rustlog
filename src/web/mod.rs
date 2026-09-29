@@ -2,6 +2,7 @@
 //! embedded frontend, API docs and metrics.
 
 mod cache_control;
+mod docs;
 mod frontend;
 mod legacy;
 mod logs_response;
@@ -110,6 +111,7 @@ pub fn api() -> Api {
     let router = ApiRouter::new()
         .merge(Router::new().nest("/api/v2", v2.router))
         .merge(legacy::router())
+        .route("/docs", axum::routing::get(docs::page))
         .route("/assets/{*asset}", get(frontend::static_asset))
         .fallback(frontend::static_asset)
         .layer(middleware::from_fn(legacy::capabilities_header))
@@ -126,6 +128,7 @@ pub fn api() -> Api {
         .route("/metrics", get(metrics))
         .finish_api(&mut legacy_spec);
     enrich_openapi(&mut legacy_spec);
+    legacy::deprecate_operations(&mut legacy_spec);
     let legacy_openapi = Arc::new(legacy_spec);
 
     Api {

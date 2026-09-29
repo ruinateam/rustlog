@@ -33,7 +33,7 @@ docker compose -f docker-compose.dev.yml ps
 
 - Бэкенд - [localhost:8026](http://localhost:8026)
 - ClickHouse - [localhost:8123](http://localhost:8123)
-- Документация - [localhost:8026/docs](http://localhost:8026/docs) и [localhost:8026/api/v2/docs](http://localhost:8026/api/v2/docs)
+- Документация API - [localhost:8026/docs](http://localhost:8026/docs)
 
 Docker поднимает ClickHouse `26.5.6.64` с healthcheck-ом, монтирует `config.json` в бэкенд в режиме read-only, а сетевые поля настроек переопределяет через `RUSTLOG_*`. Данные от Twitch-а остаются в `config.json`.
 
@@ -120,8 +120,10 @@ docker run --rm -p 8026:8026 \
 
 ### API
 
-- Старое - `/docs` и `/openapi.json`, спека в репозитории: [`docs/openapi/legacy.json`](docs/openapi/legacy.json)
-- Новое (v2) - `/api/v2/docs` и `/api/v2/openapi.json`, спека в репозитории: [`docs/openapi/v2.json`](docs/openapi/v2.json), смотрите [API_V2.md](./docs/API_V2.md).
+Документация обоих API — на одной странице `/docs`: по умолчанию v2, старое API выбирается в переключателе документов слева вверху (или `/docs?api=legacy`).
+
+- v2 — `/api/v2`, спека `/api/v2/openapi.json`, в репозитории: [`docs/openapi/v2.json`](docs/openapi/v2.json). Соглашения и все эндпоинты описаны в [API_V2.md](./docs/API_V2.md).
+- Старое (justlog-совместимое, устаревшее) — в корне, спека `/openapi.json`, в репозитории: [`docs/openapi/legacy.json`](docs/openapi/legacy.json). Оно заморожено: работает как раньше для существующих клиентов, новые возможности появляются только в v2.
 - `GET /metrics` — Prometheus-метрики.
 
 ### Реал-тайм события

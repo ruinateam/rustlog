@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "ChatTiers Rustlog API",
-    "summary": "Query chat logs, search history, inspect stats, and manage live logging.",
-    "description": "Use `channel` / `user` when you want login-based routes and `channelid` / `userid` when you already have Twitch ids.\n\nFor log endpoints, append `?json`, `?jsonBasic`, `?raw`, or `?ndjson` to switch the response format.",
+    "title": "ChatTiers Rustlog legacy API",
+    "summary": "The justlog-compatible API, kept unchanged for existing clients. Deprecated: use API v2.",
+    "description": "**Deprecated.** This API stays as it is for existing clients; new clients should use API v2, which offers the same data with consistent conventions.\n\nUse `channel` / `user` when you want login-based routes and `channelid` / `userid` when you already have Twitch ids.\n\nFor log endpoints, append `?json`, `?jsonBasic`, `?raw`, or `?ndjson` to switch the response format.",
     "version": "0.1.0"
   },
   "servers": [
@@ -70,7 +70,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       },
       "delete": {
         "tags": [
@@ -128,7 +129,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/admin/firehose": {
@@ -198,7 +200,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/channels": {
@@ -230,7 +233,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/list": {
@@ -262,7 +266,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/badges/{channel_id}": {
@@ -294,7 +299,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/namehistory/{user_id}": {
@@ -350,7 +356,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/{user_id_type}/{user}/search": {
@@ -539,7 +546,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/{user_id_type}/{user}/stats": {
@@ -659,7 +667,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/stats": {
@@ -755,7 +764,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/tiers/{year}/{month}/{day}": {
@@ -897,7 +907,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/tiers/{year}/{month}": {
@@ -1029,7 +1040,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/tiers/{year}": {
@@ -1135,7 +1147,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/sully/{channel}/{year}": {
@@ -1167,7 +1180,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/random": {
@@ -1311,7 +1325,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/{user_id_type}/{user}/random": {
@@ -1479,7 +1494,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}": {
@@ -1651,7 +1667,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/{user_id_type}/{user}": {
@@ -1847,7 +1864,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/{year}/{month}/{day}": {
@@ -2037,7 +2055,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/{channel_id_type}/{channel}/{user_id_type}/{user}/{year}/{month}": {
@@ -2241,7 +2260,8 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/optout": {
@@ -2257,7 +2277,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/capabilities": {
@@ -2276,7 +2297,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     }
   },

@@ -26,13 +26,13 @@ const CAPABILITIES: &[&str] = &["arbitrary-range-query", "search", "stats", "nam
 pub fn openapi() -> OpenApi {
     OpenApi {
         info: Info {
-            title: "ChatTiers Rustlog API".to_owned(),
+            title: "ChatTiers Rustlog legacy API".to_owned(),
             summary: Some(
-                "Query chat logs, search history, inspect stats, and manage live logging."
+                "The justlog-compatible API, kept unchanged for existing clients. Deprecated: use API v2."
                     .to_owned(),
             ),
             description: Some(
-                "Use `channel` / `user` when you want login-based routes and `channelid` / `userid` when you already have Twitch ids.\n\nFor log endpoints, append `?json`, `?jsonBasic`, `?raw`, or `?ndjson` to switch the response format."
+                "**Deprecated.** This API stays as it is for existing clients; new clients should use API v2, which offers the same data with consistent conventions.\n\nUse `channel` / `user` when you want login-based routes and `channelid` / `userid` when you already have Twitch ids.\n\nFor log endpoints, append `?json`, `?jsonBasic`, `?raw`, or `?ndjson` to switch the response format."
                     .to_owned(),
             ),
             version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -47,9 +47,34 @@ pub fn openapi() -> OpenApi {
     }
 }
 
-/// The legacy routes, including `/admin`. The docs routes need the
+/// Marks every operation of the finished document deprecated.
+pub fn deprecate_operations(spec: &mut OpenApi) {
+    let Some(paths) = &mut spec.paths else {
+        return;
+    };
+    for path_item in paths.paths.values_mut() {
+        let Some(path_item) = path_item.as_item_mut() else {
+            continue;
+        };
+        let operations = [
+            &mut path_item.get,
+            &mut path_item.put,
+            &mut path_item.post,
+            &mut path_item.delete,
+            &mut path_item.options,
+            &mut path_item.head,
+            &mut path_item.patch,
+            &mut path_item.trace,
+        ];
+        for operation in operations.into_iter().flatten() {
+            operation.deprecated = true;
+        }
+    }
+}
+
+/// The legacy routes, including `/admin`. `/openapi.json` needs the
 /// [`docs::LegacySpec`] extension, and the admin routes the
-/// [`admin::AdminApiKey`] one.
+/// [`AdminApiKey`](crate::web::AdminApiKey) one.
 pub fn router() -> ApiRouter<App> {
     ApiRouter::new()
         .nest("/admin", admin::router())
@@ -188,7 +213,6 @@ pub fn router() -> ApiRouter<App> {
         )
         .api_route("/optout", post(optout::optout))
         .api_route("/capabilities", get(capabilities))
-        .route("/docs", get(docs::scalar_page))
         .route("/openapi.json", get(docs::serve_openapi))
 }
 
