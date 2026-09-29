@@ -46,7 +46,7 @@ impl FlushBuffer {
             .filter(|msg| msg.channel_id == channel_id)
             .cloned()
             .collect::<Vec<_>>();
-        trace!("Read {} messages from flush buffer", msgs.len());
+        trace!(messages = msgs.len(), "Read messages from the write buffer");
         msgs
     }
 
@@ -65,7 +65,7 @@ impl FlushBuffer {
             .filter(|msg| msg.channel_id == channel_id && msg.user_id == user_id)
             .cloned()
             .collect::<Vec<_>>();
-        trace!("Read {} messages from flush buffer", msgs.len());
+        trace!(messages = msgs.len(), "Read messages from the write buffer");
         msgs
     }
 
@@ -99,7 +99,7 @@ pub async fn create_writer(
                 _ = &mut timeout => {
                     timeout.as_mut().reset(Instant::now() + Duration::from_secs(flush_interval));
                     if let Err(err) = write_chunk_with_retry(&db, &flush_buffer, &state).await {
-                        error!("Could not write messages: {err}");
+                        error!(error = format!("{err:#}"), "Could not write messages");
                     }
                 }
                 Some(msg) = rx.recv() => {
@@ -108,10 +108,10 @@ pub async fn create_writer(
                     }
                 }
                 Ok(()) = shutdown_rx.changed() => {
-                    info!("Flushing database write buffer");
+                    info!("Flushing the write buffer");
 
                     if let Err(err) = write_chunk_with_retry(&db, &flush_buffer, &state).await {
-                        error!("Could not flush messages: {err}");
+                        error!(error = format!("{err:#}"), "Could not flush the write buffer");
                     }
 
                     break;
@@ -132,13 +132,17 @@ async fn write_chunk_with_retry(
         match write_chunk(db, buffer, state).await {
             Ok(()) => {
                 if attempt > 1 {
-                    debug!("Insert succeeded on attempt {attempt}");
+                    debug!(attempt, "Insert succeeded after retrying");
                 }
                 return Ok(());
             }
             Err(err) => {
                 error!(
-                    "Could not insert chunk: {err:#} (attempt {attempt}/{RETRY_COUNT}, retrying in {RETRY_INTERVAL_SECONDS} seconds)"
+                    attempt,
+                    max_attempts = RETRY_COUNT,
+                    retry_in_secs = RETRY_INTERVAL_SECONDS,
+                    error = format!("{err:#}"),
+                    "Could not insert messages"
                 );
                 sleep(Duration::from_secs(RETRY_INTERVAL_SECONDS)).await;
             }
@@ -181,9 +185,9 @@ async fn write_chunk(
     insert.end().await.context("Could not end insert")?;
 
     debug!(
-        "{} messages have been inserted (took {}ms)",
-        messages.len(),
-        started_at.elapsed().as_millis()
+        messages = messages.len(),
+        took_ms = started_at.elapsed().as_millis() as u64,
+        "Inserted messages"
     );
     BATCH_MESSAGE_COUNT_GAUGE.set(messages.len().try_into().unwrap());
     messages_write_guard.clear();

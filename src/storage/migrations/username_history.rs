@@ -28,13 +28,10 @@ impl<'a> Migratable<'a> for UsernameHistoryMigration {
         .execute()
         .await?;
 
-        info!(
-            "Filling username history from {} partitions",
-            partitions.len()
-        );
+        info!(partitions = partitions.len(), "Filling username history");
 
         for partition in partitions {
-            info!("Filling username history for partition {partition}");
+            info!(%partition, "Filling username history for partition");
             db.query(
                 "
                 INSERT INTO username_history
@@ -71,10 +68,10 @@ impl<'a> Migratable<'a> for UsernameHistoryMigration {
         .await?;
 
         if let Err(err) = db.query("OPTIMIZE TABLE username_history").execute().await {
-            warn!("Could not run OPTIMIZE query on table: {err}");
+            warn!(error = %err, "Could not optimize the username history table");
         }
 
-        info!("Username history built");
+        info!("Filled username history");
 
         Ok(())
     }

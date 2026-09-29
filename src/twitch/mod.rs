@@ -68,8 +68,9 @@ impl Twitch {
                         }
                         Err(err) => {
                             warn!(
-                                "Could not generate Twitch app token: {err:#}; retrying in {}s",
-                                TOKEN_RETRY_INTERVAL.as_secs()
+                                error = format!("{err:#}"),
+                                retry_in_secs = TOKEN_RETRY_INTERVAL.as_secs(),
+                                "Could not get a Twitch app token"
                             );
                             TOKEN_RETRY_INTERVAL
                         }
@@ -102,7 +103,7 @@ impl Twitch {
             Scope::all(),
         )
         .await?;
-        info!("Generated new app token");
+        info!("Got a new Twitch app token");
 
         Ok(token)
     }
@@ -161,7 +162,7 @@ impl Twitch {
 
         // There are no chunks if the vec is empty, so there is no empty request made
         for chunk in ids_to_request.chunks(100) {
-            debug!("Requesting user info for ids {chunk:?}");
+            debug!(ids = ?chunk, "Requesting Twitch users by id");
 
             let request = GetUsersRequest::ids(chunk);
             let response = self
@@ -172,7 +173,7 @@ impl Twitch {
         }
 
         for chunk in names_to_request.chunks(100) {
-            debug!("Requesting user info for names {chunk:?}");
+            debug!(logins = ?chunk, "Requesting Twitch users by login");
 
             let request = GetUsersRequest::logins(chunk);
             let response = self

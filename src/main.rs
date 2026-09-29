@@ -33,7 +33,7 @@ use tokio::{
     sync::{broadcast, mpsc, watch},
     time::timeout,
 };
-use tracing::{debug, info};
+use tracing::info;
 use twitch_irc::login::StaticLoginCredentials;
 
 const SHUTDOWN_TIMEOUT_SECONDS: u64 = 8;
@@ -216,14 +216,14 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
         biased;
 
         _ = shutdown_rx.changed() => {
-            debug!("Waiting for tasks to shut down");
+            info!("Shutting down");
 
             let started_at = Instant::now();
 
             let shutdown_future = try_join_all([bot_handle, web_handle, writer_handle, token_handle]);
             match timeout(Duration::from_secs(SHUTDOWN_TIMEOUT_SECONDS), shutdown_future).await {
                 Ok(Ok(_)) => {
-                    debug!("Cleanup finished in {}ms", started_at.elapsed().as_millis());
+                    info!(took_ms = started_at.elapsed().as_millis() as u64, "Shut down");
                     Ok(())
                 }
                 Ok(Err(err)) => Err(anyhow!("Could not shut down properly: {err}")),
@@ -261,7 +261,7 @@ fn write_openapi(out_dir: &Path) -> anyhow::Result<()> {
         let mut json = serde_json::to_string_pretty(&*openapi)?;
         json.push('\n');
         fs::write(&path, json).with_context(|| format!("Could not write {}", path.display()))?;
-        info!("Wrote {}", path.display());
+        info!(path = %path.display(), "Wrote OpenAPI document");
     }
 
     Ok(())

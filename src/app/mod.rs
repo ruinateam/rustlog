@@ -34,7 +34,7 @@ impl App {
             .await
             .context("Could not delete logs")?;
 
-        info!("User {user_id} opted out");
+        info!(user_id, "User opted out");
 
         Ok(())
     }

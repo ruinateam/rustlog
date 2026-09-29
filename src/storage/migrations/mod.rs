@@ -100,7 +100,7 @@ async fn run_migration<'a, T: Migratable<'a>>(
         .await?;
 
     if count == 0 {
-        info!("Running migration {name}");
+        info!(migration = name, "Running migration");
         migratable.run(db).await?;
 
         db.query("INSERT INTO __rustlog_migrations VALUES (?, now())")
@@ -108,7 +108,7 @@ async fn run_migration<'a, T: Migratable<'a>>(
             .execute()
             .await?;
     } else {
-        debug!("Skipping migration {name}");
+        debug!(migration = name, "Migration already applied");
     }
 
     Ok(())

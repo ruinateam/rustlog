@@ -50,7 +50,7 @@ impl JsonLogsStream {
             .filter_map(|msg| match T::from_structured(msg) {
                 Ok(parsed) => Some(parsed),
                 Err(err) => {
-                    error!("Could not parse message {msg:?} from DB: {err}");
+                    error!(message_id = %msg.id, error = format!("{err:#}"), "Could not render a stored message");
                     None
                 }
             })

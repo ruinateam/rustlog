@@ -34,11 +34,11 @@ impl UsersCache {
         let entry = self.ids.get(id)?;
         if entry.value().0.elapsed().as_secs() > EXPIRY_INTERVAL {
             drop(entry);
-            trace!("Removing {id} from cache");
+            trace!(id, "Evicting expired user");
             self.ids.remove(id);
             None
         } else {
-            trace!("Using cached value for id {id}");
+            trace!(id, "User found in cache");
             Some(entry.value().1.clone())
         }
     }
@@ -48,11 +48,11 @@ impl UsersCache {
         if entry.value().0.elapsed().as_secs() > EXPIRY_INTERVAL {
             let key = entry.key().clone();
             drop(entry);
-            trace!("Removing {name} from cache");
+            trace!(login = name, "Evicting expired user");
             self.logins.remove(&key);
             None
         } else {
-            trace!("Using cached value for name {name}");
+            trace!(login = name, "User found in cache");
             Some(entry.value().1.clone())
         }
     }
@@ -87,7 +87,7 @@ impl BadgesCache {
 
         if entry.inserted_at.elapsed().as_secs() > BADGES_EXPIRY_INTERVAL {
             drop(entry);
-            trace!("Removing badges of {key:?} from cache");
+            trace!(channel_id = ?key, "Evicting expired chat badges");
             self.sets.remove(&key);
             None
         } else {

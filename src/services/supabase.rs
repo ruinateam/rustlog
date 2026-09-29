@@ -77,8 +77,8 @@ pub fn spawn_tier_snapshot(
         Ok(v) => v,
         Err(_) => {
             warn!(
-                "supabase skip: total_users overflow ({}).",
-                tiers.total_users
+                total_users = tiers.total_users,
+                "Skipping tier snapshot: too many users"
             );
             return;
         }
@@ -87,8 +87,8 @@ pub fn spawn_tier_snapshot(
         Ok(v) => v,
         Err(_) => {
             warn!(
-                "supabase skip: total_messages overflow ({}).",
-                tiers.total_messages
+                total_messages = tiers.total_messages,
+                "Skipping tier snapshot: too many messages"
             );
             return;
         }
@@ -97,8 +97,8 @@ pub fn spawn_tier_snapshot(
         Ok(v) => v,
         Err(_) => {
             warn!(
-                "supabase skip: total_unique_messages overflow ({}).",
-                tiers.total_unique_messages
+                total_unique_messages = tiers.total_unique_messages,
+                "Skipping tier snapshot: too many unique messages"
             );
             return;
         }
@@ -108,7 +108,7 @@ pub fn spawn_tier_snapshot(
     let entries_json = match serde_json::to_value(entries) {
         Ok(v) => v,
         Err(e) => {
-            warn!("supabase skip: serialize entries failed: {:?}", e);
+            warn!(error = %e, "Skipping tier snapshot: could not serialize the entries");
             return;
         }
     };
@@ -127,7 +127,10 @@ pub fn spawn_tier_snapshot(
     let cfg = SupabaseConfig { url, service_key };
     tokio::spawn(async move {
         if let Err(e) = write_tier_snapshot(cfg, payload).await {
-            warn!("supabase upsert failed: {:?}", e);
+            warn!(
+                error = format!("{e:#}"),
+                "Could not write the tier snapshot to Supabase"
+            );
         }
     });
 }

@@ -65,7 +65,7 @@ impl From<OptedOut> for Error {
 
 impl From<anyhow::Error> for Error {
     fn from(err: anyhow::Error) -> Self {
-        error!("Error: {err}");
+        error!(error = format!("{err:#}"), "Internal error");
         Self::Internal
     }
 }
@@ -87,7 +87,7 @@ impl Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         if let Error::Database(error) = &self {
-            error!("DB error: {error}");
+            error!(%error, "Database error");
         }
 
         (self.status(), self.to_string()).into_response()

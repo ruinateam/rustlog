@@ -297,7 +297,7 @@ pub async fn get_sully_streams(
             total,
             streams,
         };
-        let _ = app.sully.write_cache(&list);
+        app.sully.write_cache(&list);
         return Ok((cache_header(600), Json(SullyStreamsResponse::from(list))));
     }
 
@@ -317,8 +317,6 @@ pub async fn get_channel_logs_by_date(
     Path(channel_log_params): Path<ChannelLogsByDatePath>,
     Query(logs_params): Query<LogsParams>,
 ) -> Result<impl IntoApiResponse> {
-    debug!("Params: {logs_params:?}");
-
     let channel_id = match channel_log_params.channel_info.channel_id_type {
         ChannelIdType::Name => {
             app.twitch
@@ -588,7 +586,7 @@ pub async fn optout(app: State<App>) -> Json<String> {
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(60)).await;
             if codes.remove(&optout_code).is_some() {
-                debug!("Dropping optout code {optout_code}");
+                debug!(code = %optout_code, "Opt-out code expired");
             }
         });
     }

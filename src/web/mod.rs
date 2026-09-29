@@ -81,7 +81,7 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
 
     let app = service(app, bot_tx, shutdown_rx.clone());
 
-    info!("Listening on {listen_address}");
+    info!(address = %listen_address, "Listening");
 
     let listener = TcpListener::bind(&listen_address)
         .await
@@ -90,7 +90,7 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
     axum::serve(listener, ServiceExt::<Request>::into_make_service(app))
         .with_graceful_shutdown(async move {
             shutdown_rx.changed().await.ok();
-            debug!("Shutting down web task");
+            debug!("Shutting down the HTTP server");
         })
         .await
         .unwrap();

@@ -79,8 +79,8 @@ ORDER BY (channel_id, user_id, timestamp)
         }
 
         info!(
-            "Migrating {} partitions to new table structure",
-            partitions.len()
+            partitions = partitions.len(),
+            "Migrating messages to the structured table"
         );
 
         let i = Arc::new(AtomicU64::new(1));
@@ -109,15 +109,17 @@ ORDER BY (channel_id, user_id, timestamp)
         }
 
         info!(
-            "Migrated {} messages in {:?}",
-            i.load(Ordering::SeqCst),
-            started_at.elapsed()
+            messages = i.load(Ordering::SeqCst),
+            took_secs = started_at.elapsed().as_secs(),
+            "Migrated messages to the structured table"
         );
 
-        info!("Dropping old table");
+        info!("Dropping the old message table");
         if let Err(err) = db.query("DROP TABLE message").execute().await {
-            error!("FAILED TO DROP OLD TABLE!!!! {err}");
-            error!("Drop it manually with `DROP TABLE message` to save on space")
+            error!(
+                error = %err,
+                "Could not drop the old message table; drop it manually with `DROP TABLE message` to free the space"
+            );
         }
 
         Ok(())
@@ -129,7 +131,7 @@ async fn migrate_partition(
     db: &clickhouse::Client,
     i: Arc<AtomicU64>,
 ) -> anyhow::Result<()> {
-    info!("Migrating partition {partition}");
+    info!(%partition, "Migrating partition");
 
     let mut inserter = db
         .inserter::<StructuredMessage<'static>>(MESSAGES_STRUCTURED_TABLE)
@@ -158,20 +160,17 @@ async fn migrate_partition(
                     .await
                     .with_context(|| format!("Could not commit batch for partition {partition}"))?;
                 if stats.rows > 0 {
-                    info!(
-                        "Inserted {} messages from partition {partition}",
-                        stats.rows
-                    );
+                    info!(%partition, messages = stats.rows, "Inserted messages from partition");
                 }
 
                 i.fetch_add(1, Ordering::Relaxed);
                 let value = i.load(Ordering::Relaxed);
                 if value.is_multiple_of(1_000_000) {
-                    info!("Processed {value} messages");
+                    info!(messages = value, "Migration progress");
                 }
             }
             Err(err) => {
-                error!("Could not process message {unstructured_msg:?}: {err}");
+                error!(raw = %unstructured_msg.raw, error = format!("{err:#}"), "Could not parse a stored IRC message");
             }
         }
     }
@@ -180,7 +179,7 @@ async fn migrate_partition(
         .end()
         .await
         .with_context(|| format!("Could not finalize migration for partition {partition}"))?;
-    info!("Processed partition {partition}");
+    info!(%partition, "Migrated partition");
 
     Ok(())
 }

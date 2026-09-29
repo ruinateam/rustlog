@@ -13,7 +13,7 @@ use tokio::{
     sync::mpsc::{Receiver, Sender},
     time::sleep,
 };
-use tracing::{debug, error, info, log::warn, trace};
+use tracing::{debug, error, info, trace, warn};
 use twitch_irc::{
     ClientConfig, SecureTCPTransport, TwitchIRCClient,
     login::LoginCredentials,
@@ -93,9 +93,9 @@ impl Bot {
                     .await
                 {
                     Ok(users) => {
-                        info!("Joining {} channels", users.len());
+                        info!(count = users.len(), "Joining channels");
                         for channel_login in users.into_values() {
-                            debug!("Logging channel {channel_login}");
+                            debug!(channel = %channel_login, "Logging channel");
                             join_client
                                 .join(channel_login)
                                 .expect("Failed to join channel");
@@ -103,7 +103,7 @@ impl Bot {
                         CHANNEL_REJOIN_INTERVAL_SECONDS
                     }
                     Err(err) => {
-                        error!("Could not fetch users list: {err}");
+                        error!(error = %err, "Could not resolve the logged channels");
                         CHANENLS_REFETCH_RETRY_INTERVAL_SECONDS
                     }
                 };
@@ -125,7 +125,7 @@ impl Bot {
                             )
                             .await
                         {
-                            error!("Could not join channels: {err}");
+                            error!(error = format!("{err:#}"), "Could not join channels");
                         }
                     }
                     BotMessage::PartChannels(channels) => {
@@ -137,7 +137,7 @@ impl Bot {
                             )
                             .await
                         {
-                            error!("Could not join channels: {err}");
+                            error!(error = format!("{err:#}"), "Could not leave channels");
                         }
                     }
                 }
@@ -148,11 +148,11 @@ impl Bot {
             tokio::select! {
                 Some(msg) = receiver.recv() => {
                     if let Err(e) = self.handle_message(msg, &client).await {
-                        error!("Could not handle message: {e}");
+                        error!(error = format!("{e:#}"), "Could not handle an IRC message");
                     }
                 }
                 _ = shutdown_rx.changed() => {
-                    debug!("Shutting down bot task");
+                    debug!("Shutting down the bot");
                     break;
                 }
             }
@@ -165,11 +165,11 @@ impl Bot {
         client: &TwitchClient<C>,
     ) -> anyhow::Result<()> {
         if let ServerMessage::Privmsg(privmsg) = &msg {
-            trace!("Processing message {}", privmsg.message_text);
+            trace!(text = %privmsg.message_text, "Processing message");
             if let Some(cmd) = privmsg.message_text.strip_prefix(COMMAND_PREFIX)
                 && let Err(err) = self.handle_command(cmd, client, &privmsg.sender.id).await
             {
-                warn!("Could not handle command {cmd}: {err:#}");
+                warn!(command = %cmd, error = format!("{err:#}"), "Could not handle chat command");
             }
         }
 
@@ -231,7 +231,7 @@ impl Bot {
                     }
                 }
                 Err(err) => {
-                    error!("Could not convert message {unstructured:?} to be logged: {err}");
+                    error!(raw = %unstructured.raw, error = %err, "Could not parse an IRC message");
                 }
             }
         }
@@ -245,7 +245,7 @@ impl Bot {
         client: &TwitchClient<C>,
         sender_id: &str,
     ) -> anyhow::Result<()> {
-        debug!("Processing command {cmd}");
+        debug!(command = %cmd, "Processing chat command");
         let mut split = cmd.split_whitespace();
         if let Some(action) = split.next() {
             let args: Vec<&str> = split.collect();
@@ -311,12 +311,12 @@ impl Bot {
         for (channel_id, channel_name) in channels {
             match action {
                 ChannelAction::Join => {
-                    info!("Joining channel {channel_name}");
+                    info!(channel = %channel_name, "Joining channel");
                     self.app.state.enable_channel(&channel_id).await?;
                     client.join(channel_name)?;
                 }
                 ChannelAction::Part => {
-                    info!("Parting channel {channel_name}");
+                    info!(channel = %channel_name, "Leaving channel");
                     self.app.state.disable_channel(&channel_id).await?;
                     client.part(channel_name);
                 }

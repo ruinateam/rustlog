@@ -67,7 +67,10 @@ pub async fn read_channel(
             streams.reverse();
         }
 
-        debug!("Using {} queries for multi-query stream", streams.len());
+        debug!(
+            queries = streams.len(),
+            "Reading channel logs in several queries"
+        );
 
         LogsStream::new_multi_query(streams, buffer_response)
     } else {

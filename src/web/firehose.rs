@@ -113,7 +113,7 @@ async fn run_session(
                     let payload = match encode_message(&message, &format) {
                         Ok(payload) => payload,
                         Err(err) => {
-                            warn!("Could not encode firehose message: {err:#}");
+                            warn!(error = format!("{err:#}"), "Could not encode a firehose message");
                             close(&mut sender, 1011, "serialization error").await;
                             reason = "serialization_error";
                             break;

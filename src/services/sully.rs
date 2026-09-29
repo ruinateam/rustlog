@@ -11,7 +11,7 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, time::Duration};
-use tracing::{error, warn};
+use tracing::{debug, info, warn};
 
 /// Failure of a SullyGnome request.
 #[derive(Debug, thiserror::Error)]
@@ -96,21 +96,14 @@ impl SullyGnome {
             return Err(Error::InvalidChannel);
         }
 
-        let internal_id = self.fetch_internal_id(channel).await.inspect_err(|e| {
-            error!(
-                "sully fetch internal_id failed channel={} err={:?}",
-                channel, e
-            );
-        })?;
-
-        self.fetch_streams(&internal_id, year)
-            .await
-            .inspect_err(|e| {
-                error!(
-                    "sully fetch streams failed channel={} year={} err={:?}",
-                    channel, year, e
-                );
-            })
+        let result = match self.fetch_internal_id(channel).await {
+            Ok(internal_id) => self.fetch_streams(&internal_id, year).await,
+            Err(error) => Err(error),
+        };
+        if let Err(error) = &result {
+            warn!(channel, year, %error, "Could not fetch streams from SullyGnome");
+        }
+        result
     }
 
     /// Fetches a channel's streams in `year` and refreshes the cache, falling
@@ -123,25 +116,24 @@ impl SullyGnome {
                 total: streams.len() as u32,
                 streams,
             };
-            let _ = self.write_cache(&list);
+            self.write_cache(&list);
             return Some(list);
         }
 
-        if let Some(cached) = self.read_cache(channel, year) {
-            warn!(
-                "sully fetch falling back to cache channel={} year={} streams={}",
+        let cached = self.read_cache(channel, year);
+        match &cached {
+            Some(list) => info!(
                 channel,
                 year,
-                cached.streams.len()
-            );
-            Some(cached)
-        } else {
-            warn!(
-                "sully fetch failed and no cache available channel={} year={}",
-                channel, year
-            );
-            None
+                streams = list.streams.len(),
+                "Using cached SullyGnome streams"
+            ),
+            None => warn!(
+                channel,
+                year, "No cached SullyGnome streams to fall back to"
+            ),
         }
+        cached
     }
 
     pub fn read_cache(&self, channel: &str, year: i32) -> Option<StreamList> {
@@ -150,13 +142,17 @@ impl SullyGnome {
         parse_body(channel, year, &data).ok()
     }
 
-    pub fn write_cache(&self, list: &StreamList) -> std::io::Result<()> {
+    /// Failures are logged: the cache is only a fallback.
+    pub fn write_cache(&self, list: &StreamList) {
         let Some(path) = self.cache_path(&list.channel, list.year) else {
-            return Ok(());
+            return;
         };
-        fs::create_dir_all(&self.cache_dir)?;
-        let data = serde_json::to_string_pretty(list)?;
-        fs::write(path, data)
+        let written = fs::create_dir_all(&self.cache_dir)
+            .and_then(|()| Ok(serde_json::to_string_pretty(list)?))
+            .and_then(|data| fs::write(&path, data));
+        if let Err(error) = written {
+            warn!(path = %path.display(), %error, "Could not write the SullyGnome cache");
+        }
     }
 
     /// `None` for channel names that are not a Twitch login or id, which
@@ -167,30 +163,16 @@ impl SullyGnome {
 
     async fn fetch_internal_id(&self, login: &str) -> Result<String> {
         let url = format!("{}/api/standardsearch/{login}", self.base_url);
-        let resp = self.http.get(&url).send().await.map_err(|e| {
-            error!("sully id http error login={} err={:?}", login, e);
-            Error::Http(e)
-        })?;
+        let resp = self.http.get(&url).send().await?;
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         if !status.is_success() {
-            error!(
-                "sully id non-success status={} login={} body_snippet={}",
-                status,
-                login,
-                body.chars().take(500).collect::<String>()
-            );
+            debug!(%url, %status, body = snippet(&body), "Unexpected SullyGnome response");
             return Err(Error::Status(status));
         }
-        let items: Vec<SearchItem> = serde_json::from_str(&body).map_err(|e| {
-            error!(
-                "sully id parse error login={} err={:?} body_snippet={}",
-                login,
-                e,
-                body.chars().take(500).collect::<String>()
-            );
-            Error::Parse(e)
-        })?;
+        let items: Vec<SearchItem> = serde_json::from_str(&body).inspect_err(
+            |_| debug!(%url, body = snippet(&body), "Unparsable SullyGnome response"),
+        )?;
         let id = items
             .into_iter()
             .find(|it| it.itemtype == 1)
@@ -209,30 +191,16 @@ impl SullyGnome {
                 "{}/api/tables/channeltables/streams/{year}/{internal_id}/%20/1/1/desc/{offset}/{limit}",
                 self.base_url
             );
-            let resp_raw = self.http.get(&url).send().await.map_err(|e| {
-                error!("sully streams http error url={} err={:?}", url, e);
-                Error::Http(e)
-            })?;
+            let resp_raw = self.http.get(&url).send().await?;
             let status = resp_raw.status();
             let body = resp_raw.text().await.unwrap_or_default();
             if !status.is_success() {
-                error!(
-                    "sully streams non-success status={} url={} body_snippet={}",
-                    status,
-                    url,
-                    body.chars().take(500).collect::<String>()
-                );
+                debug!(%url, %status, body = snippet(&body), "Unexpected SullyGnome response");
                 return Err(Error::Status(status));
             }
-            let parsed = parse_body("", year, &body).map_err(|e| {
-                error!(
-                    "sully streams parse error url={} err={:?} body_snippet={}",
-                    url,
-                    e,
-                    body.chars().take(500).collect::<String>()
-                );
-                e
-            })?;
+            let parsed = parse_body("", year, &body).inspect_err(
+                |_| debug!(%url, body = snippet(&body), "Unparsable SullyGnome response"),
+            )?;
             let total = parsed.total;
             let count_added = parsed.streams.len() as u32;
             streams.extend(parsed.streams);
@@ -244,6 +212,11 @@ impl SullyGnome {
 
         Ok((total, streams))
     }
+}
+
+/// The start of a response body, for logs.
+fn snippet(body: &str) -> String {
+    body.chars().take(500).collect()
 }
 
 /// Twitch logins and ids only contain ASCII letters, digits and underscores.
