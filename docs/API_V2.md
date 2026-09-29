@@ -1,94 +1,173 @@
 # API v2
 
-API v2 is additive. Legacy routes remain available at `/docs` and `/openapi.json`; do not assume legacy response paths, redirects, boolean format flags, or text errors apply to v2.
+API v2 covers everything the legacy API does, with consistent conventions. The
+legacy API stays frozen for existing clients and is deprecated.
 
-- Interactive documentation: `/api/v2/docs`
-- OpenAPI document: `/api/v2/openapi.json`
+- Interactive documentation of both APIs: `/docs`
+- OpenAPI documents: `/api/v2/openapi.json` (v2), `/openapi.json` (legacy)
 - Base path: `/api/v2`
 
 ## Conventions
 
-- Resource paths use canonical Twitch numeric ids, represented as strings.
-- JSON fields use lower camel case.
-- RFC 3339 timestamps are UTC-aware. A log range is `[from, to)`: `from` is inclusive and `to` is exclusive.
-- A range requires both `from` and `to`; `to` must be later than `from`.
-- Log and availability responses use `Cache-Control: no-cache` so an opt-out can withdraw data without relying on an expired shared cache.
-- A channel or user blocked by opt-out policy receives `403` and is never returned in a bulk result.
+- **Ids.** Channels and users are addressed by their numeric Twitch ids,
+  represented as strings. Look up the id of a login with `GET /users`. Twitch
+  logins change; ids do not.
+- **JSON.** Fields are in lower camel case. Absent optional fields are left
+  out rather than `null`.
+- **Time.** Timestamps are RFC 3339 in UTC. Dates are `YYYY-MM-DD`, months
+  `YYYY-MM`. A time range is half-open, `[from, to)`: `from` is inclusive,
+  `to` exclusive, and `to` must be later than `from`.
+- **Opt-out.** Data of a channel or user that opted out is answered with
+  `403 opted_out` and never appears in lists. Log, stats and availability
+  responses carry `Cache-Control: no-cache`, so an opt-out takes effect
+  without waiting for a shared cache to expire.
 
 ## Errors
 
-Application errors use `application/problem+json`:
+Every error is an `application/problem+json` body in the shape of
+[RFC 9457](https://www.rfc-editor.org/rfc/rfc9457):
 
 ```json
 {
   "code": "invalid_request",
   "status": 400,
-  "title": "The request is invalid"
+  "title": "The request is invalid",
+  "detail": "`to` must be later than `from`"
 }
 ```
 
-Defined codes are `invalid_request`, `opted_out`, `not_found`, `upstream_unavailable`, and `internal_error`. Do not parse `title`; use `code` and HTTP status for program logic.
+Use `code` and the HTTP status in program logic; `title` and `detail` are for
+people and may change. `detail` is left out when there is nothing to add.
 
-## Resolve a login
+| `code` | Status | Meaning |
+| --- | --- | --- |
+| `invalid_request` | 400 | A parameter is missing or malformed. |
+| `unauthorized` | 401 | The admin API key is missing or wrong. |
+| `opted_out` | 403 | The channel or user opted out of logging. |
+| `not_found` | 404 | No such route, channel, user or data. |
+| `upstream_unavailable` | 503 | Twitch cannot be queried yet. |
+| `internal_error` | 500 | Something went wrong on the server. |
+
+## Endpoints
+
+### Users
+
+| Request | Response |
+| --- | --- |
+| `GET /users?login=a&login=b` | `{ "users": [User] }` |
+| `GET /users?id=1&id=2` | `{ "users": [User] }` |
+| `GET /users/{userId}/name-history` | `{ "names": [PreviousName] }` |
+
+`GET /users` takes up to 100 logins or ids in total, repeating the parameter.
+Users Twitch does not know are left out. A `User` is `{ "id", "login" }`; a
+`PreviousName` is `{ "login", "firstSeenAt", "lastSeenAt" }`.
+
+### Channels
+
+| Request | Response |
+| --- | --- |
+| `GET /channels` | `{ "channels": [User] }`, the logged channels |
+| `GET /channels/{channelId}/badges` | `{ "badges": [ChatBadge] }` |
+| `GET /channels/{channelId}/stats` | `ChannelStats` |
+| `GET /channels/{channelId}/streams?year=2026` | `{ "streams": [Stream] }` |
+
+Badges are the global and the channel's Twitch chat badges, for logged
+channels only: `{ "setId", "version", "title", "description", "imageUrl1x",
+"imageUrl2x" }`.
+
+Stats take an optional range (`from` and `to`) and return
+`{ "messageCount", "topChatters": [{ "userId", "login", "messageCount" }] }`.
+
+Streams come from SullyGnome: `{ "id", "startedAt", "endedAt",
+"durationMinutes", "games" }`, where unknown fields are left out.
+
+### Logs
+
+| Request | Response |
+| --- | --- |
+| `GET /channels/{channelId}/log-dates` | `{ "dates": ["2026-03-01", ...] }` |
+| `GET /channels/{channelId}/logs?from&to` | messages |
+| `GET /channels/{channelId}/logs/random` | one message |
+| `GET /channels/{channelId}/users/{userId}/log-months` | `{ "months": ["2026-03", ...] }` |
+| `GET /channels/{channelId}/users/{userId}/logs?from&to` | messages |
+| `GET /channels/{channelId}/users/{userId}/logs/random` | one message |
+| `GET /channels/{channelId}/users/{userId}/logs/search?q=` | messages |
+| `GET /channels/{channelId}/users/{userId}/stats` | `{ "userId", "login", "messageCount" }` |
+
+Dates and months are UTC, newest first. Log ranges are required; search and
+user stats take an optional range.
+
+Every endpoint that returns messages takes `format`:
+
+| `format` | Content type | Payload |
+| --- | --- | --- |
+| `basic-json` (default) | `application/json` | `{ "messages": [BasicMessage] }` |
+| `full-json` | `application/json` | `{ "messages": [FullMessage] }` |
+| `ndjson` | `application/x-ndjson` | one `BasicMessage` per line |
+| `text` | `text/plain; charset=utf-8` | formatted lines |
+| `raw` | `text/plain; charset=utf-8` | raw IRC lines |
+
+Lists of messages also take `reverse=true` (newest first), `limit` (at least
+1) and `offset` (messages to skip).
+
+To follow live chat, remember the timestamp and id of the latest message,
+replay this endpoint after reconnecting, and drop the messages seen already:
+the admin firehose delivers at least once and has no durable cursor.
+
+### Tiers
 
 ```text
-GET /api/v2/users/resolve?login=example_channel
+GET /channels/{channelId}/tiers/{period}?mode=all&excludeBots=nightbot,moobot
 ```
+
+`period` is a calendar day (`2026-03-01`), month (`2026-03`) or year
+(`2026`) in the Europe/Moscow time zone. `mode` counts all messages (`all`,
+the default), only those sent while the stream was live (`online`) or while
+it was offline (`offline`). `excludeBots` replaces the default list of bots
+left out of the table.
 
 ```json
 {
-  "id": "123456",
-  "login": "example_channel"
-}
-```
-
-The returned `id` can be used in the remaining v2 paths.
-
-## List available periods
-
-```text
-GET /api/v2/channels/123456/availability
-GET /api/v2/channels/123456/availability?userId=987654
-```
-
-Without `userId`, the response lists channel day buckets. With `userId`, it lists user month buckets:
-
-```json
-{
-  "availableLogs": [
-    { "year": "2026", "month": "03" }
+  "period": "2026-03",
+  "timezone": "Europe/Moscow",
+  "mode": "all",
+  "totalUsers": 2,
+  "totalMessages": 5,
+  "totalUniqueMessages": 5,
+  "entries": [
+    {
+      "userId": "22222",
+      "login": "alice",
+      "messages": 3,
+      "uniqueMessages": 3,
+      "tierScore": 12,
+      "windows": {
+        "1m": { "active": 3, "rank": 1, "tier": "S" },
+        "5m": { "active": 3 }
+      }
+    }
   ]
 }
 ```
 
-## Read user logs
+`windows` has the numbers of active 1, 5, 15, 30 and 60 minute windows, with
+the rank and tier within each size where the user is ranked. Up to 500
+entries are returned.
 
-```text
-GET /api/v2/channels/123456/users/987654/logs?from=2026-03-01T00:00:00Z&to=2026-04-01T00:00:00Z&format=basic-json
-```
+### Opt-out
 
-Supported `format` values:
+`POST /opt-out-codes` answers `201` with `{ "code", "expiresAt" }`. Writing
+`!rustlog optout <code>` in the chat of a logged channel before the code
+expires, a minute later, opts the sender out.
 
-| Value | Content type | Payload |
-| --- | --- | --- |
-| `basic-json` | `application/json` | `{ "messages": [BasicMessage] }` |
-| `full-json` | `application/json` | `{ "messages": [FullMessage] }` |
-| `ndjson` | `application/x-ndjson` | one basic message per line |
-| `text` | `text/plain; charset=utf-8` | formatted message lines |
-| `raw` | `text/plain; charset=utf-8` | raw IRC message lines |
+### Admin
 
-`basic-json` is the default. Empty JSON responses are valid JSON with an empty `messages` array.
+Admin requests need the `X-Api-Key` header; never put the key in a URL.
 
-Optional query parameters:
+| Request | Effect |
+| --- | --- |
+| `PUT /admin/channels/{channelId}` | Start logging the channel (`204`). |
+| `DELETE /admin/channels/{channelId}` | Stop logging the channel (`204`). |
 
-- `reverse=true` reverses result order.
-- `limit` is a positive integer.
-- `offset` is a zero-based number of matching messages to skip.
-
-Clients consuming live events should retain the latest message timestamp and id, replay this endpoint after reconnecting, and de-duplicate events. The admin firehose is at-least-once delivery, not a durable cursor.
-
-## Admin live feed
-
-`GET /admin/firehose` is intentionally outside the browser-oriented v2 surface. It requires the `X-Api-Key` header and supports `format=raw` or `format=json-basic`. Never place the API key in a query parameter, URL fragment, or WebSocket subprotocol.
-
-See [CONFIG.md](./CONFIG.md) for authentication, slow-client close behavior, and reverse-proxy guidance.
+The live WebSocket feed stays at `GET /admin/firehose`, outside v2. See
+[CONFIG.md](./CONFIG.md) for its formats and slow-client behavior.
