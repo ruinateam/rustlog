@@ -39,6 +39,10 @@ RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --profile dist --target "$(cat /ta
 RUN mv "./target/$(cat /target.txt)/dist/rustlog" /rustlog
 
 FROM debian:bookworm-slim AS runtime
+# reqwest verifies TLS certificates against the system store.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 RUN useradd rustlog && mkdir /logs && mkdir /app && chown rustlog: /logs /app
 COPY --from=builder /rustlog /usr/local/bin/rustlog
 WORKDIR /app

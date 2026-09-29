@@ -3,16 +3,11 @@ all-features = true
 
 [advisories]
 yanked = "deny"
-# TODO: drop these once twitch-irc and prometheus 0.13 are replaced.
+# TODO: drop this once prometheus 0.13 is gone.
 ignore = [
     # protobuf 2 via prometheus 0.13; only used to encode metrics, never to
     # parse untrusted input.
-    { id = "RUSTSEC-2024-0437", reason = "protobuf 2 comes from prometheus 0.13 and twitch-irc" },
-    # rustls-webpki 0.101 via twitch-irc's rustls 0.21, used only for the
-    # connection to Twitch IRC.
-    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101 comes from twitch-irc" },
-    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101 comes from twitch-irc" },
-    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.101 comes from twitch-irc" },
+    { id = "RUSTSEC-2024-0437", reason = "protobuf 2 comes from prometheus 0.13" },
 ]
 
 [licenses]
